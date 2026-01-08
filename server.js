@@ -106,7 +106,7 @@ app.get('/download/:fileId', downloadLimiter, (req, res) => {
 });
 
 // File info endpoint
-app.get('/info/:fileId', (req, res) => {
+app.get('/info/:fileId', downloadLimiter, (req, res) => {
   const fileId = req.params.fileId;
   const metadata = fileMetadata.get(fileId);
 
