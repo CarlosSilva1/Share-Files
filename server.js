@@ -77,16 +77,15 @@ app.get('/download/:fileId', (req, res) => {
 
   const filePath = path.join(uploadsDir, metadata.filename);
 
-  if (!fs.existsSync(filePath)) {
-    fileMetadata.delete(fileId);
-    return res.status(404).send('File not found');
-  }
-
   metadata.downloads++;
   
   res.download(filePath, metadata.originalName, (err) => {
     if (err) {
       console.error('Download error:', err);
+      // If file doesn't exist, clean up metadata
+      if (err.code === 'ENOENT') {
+        fileMetadata.delete(fileId);
+      }
     }
   });
 });
