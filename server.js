@@ -3,9 +3,24 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Rate limiting for upload endpoint
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 uploads per windowMs
+  message: 'Too many upload requests, please try again later.'
+});
+
+// Rate limiting for download endpoint
+const downloadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 downloads per windowMs
+  message: 'Too many download requests, please try again later.'
+});
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -39,7 +54,7 @@ const fileMetadata = new Map();
 app.use(express.static('public'));
 
 // Upload endpoint
-app.post('/upload', upload.single('file'), (req, res) => {
+app.post('/upload', uploadLimiter, upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -67,7 +82,7 @@ app.post('/upload', upload.single('file'), (req, res) => {
 });
 
 // Download endpoint
-app.get('/download/:fileId', (req, res) => {
+app.get('/download/:fileId', downloadLimiter, (req, res) => {
   const fileId = req.params.fileId;
   const metadata = fileMetadata.get(fileId);
 
