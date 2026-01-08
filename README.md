@@ -9,6 +9,7 @@ A simple and elegant web application for sharing files that are too large for ch
 - 📊 **File Size Support**: Upload files up to 100MB
 - 🎨 **Beautiful UI**: Modern and responsive interface
 - 🚀 **Fast**: Quick uploads and downloads
+- 🔒 **Secure**: Rate limiting protection and security best practices
 
 ## Installation
 
@@ -51,6 +52,9 @@ You can customize the following settings in `server.js`:
 - **Port**: Change `PORT` environment variable (default: 3000)
 - **Max File Size**: Modify the `fileSize` limit in the multer configuration (default: 100MB)
 - **Upload Directory**: Change the `uploadsDir` path (default: ./uploads)
+- **Rate Limiting**: Adjust the `windowMs` and `max` values in the rate limiters:
+  - Upload: 10 uploads per 15 minutes per IP
+  - Download/Info: 100 requests per 15 minutes per IP
 
 ## API Endpoints
 
