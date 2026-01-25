@@ -4202,6 +4202,27 @@ void DrawLogoMAIS_HD()
    pixels[16724]=0xFFFFFFFF;   pixels[16725]=0xFFFFFFFF;   pixels[16726]=0xFFFFFFFF;   pixels[16727]=0xFFFFFFFF;
    pixels[16728]=0xFFFFFFFF;   pixels[16729]=0xFFFFFFFF;   pixels[16730]=0xFFFFFFFF;   pixels[16731]=0xFFFFFFFF;
    pixels[16732]=0xFFFFFFFF;   pixels[16733]=0xFFFFFFFF;   pixels[16734]=0xFFFFFFFF;   pixels[16735]=0xFFFFFFFF;
+   pixels[16736]=0xFFFFFFFF;   pixels[16737]=0xFFFFFFFF;   pixels[16738]=0xFFFFFFFF;   pixels[16739]=0xFFFFFFFF;
+   pixels[16740]=0xFFFFFFFF;   pixels[16741]=0xFFFFFFFF;   pixels[16742]=0xFFFFFFFF;   pixels[16743]=0xFFFFFFFF;
+   pixels[16744]=0xFFFFFFFF;   pixels[16745]=0xFFFFFFFF;   pixels[16746]=0xFFFFFFFF;   pixels[16747]=0xFFFFFFFF;
+   pixels[16748]=0xFFFFFFFF;   pixels[16749]=0xFFFFFFFF;   pixels[16750]=0xFFFFFFFF;   pixels[16751]=0xFFFFFFFF;
+   pixels[16752]=0xFFFFFFFF;   pixels[16753]=0xFFFFFFFF;   pixels[16754]=0xFFFFFFFF;   pixels[16755]=0xFFFFFFFF;
+   pixels[16756]=0xFFFFFFFF;   pixels[16757]=0xFFFFFFFF;   pixels[16758]=0xFFFFFFFF;   pixels[16759]=0xFFFFFFFF;
+   pixels[16760]=0xFFFFFFFF;   pixels[16761]=0xFFFFFFFF;   pixels[16762]=0xFFFFFFFF;   pixels[16763]=0xFFFFFFFF;
+   pixels[16764]=0xFFFFFFFF;   pixels[16765]=0xFFFFFFFF;   pixels[16766]=0xFFFFFFFF;   pixels[16767]=0xFFFFFFFF;
+   pixels[16768]=0xFFFFFFFF;   pixels[16769]=0xFFFFFFFF;   pixels[16770]=0xFFFFFFFF;   pixels[16771]=0xFFFFFFFF;
+   pixels[16772]=0xFFFFFFFF;   pixels[16773]=0xFFFFFFFF;   pixels[16774]=0xFFFFFFFF;   pixels[16775]=0xFFFFFFFF;
+   pixels[16776]=0xFFFFFFFF;   pixels[16777]=0xFFFFFFFF;   pixels[16778]=0xFFFFFFFF;   pixels[16779]=0xFFFFFFFF;
+   pixels[16780]=0xFFFFFFFF;   pixels[16781]=0xFFFFFFFF;   pixels[16782]=0xFFFFFFFF;   pixels[16783]=0xFFFFFFFF;
+   pixels[16784]=0xFFFFFFFF;   pixels[16785]=0xFFFFFFFF;   pixels[16786]=0xFFFFFFFF;   pixels[16787]=0xFFFFFFFF;
+   pixels[16788]=0xFFFFFFFF;   pixels[16789]=0xFFFFFFFF;   pixels[16790]=0xFFFFFFFF;   pixels[16791]=0xFFFFFFFF;
+   pixels[16792]=0xFFFFFFFF;   pixels[16793]=0xFFFFFFFF;   pixels[16794]=0xFFFFFFFF;   pixels[16795]=0xFFFFFFFF;
+   pixels[16796]=0xFFFFFFFF;   pixels[16797]=0xFFFFFFFF;   pixels[16798]=0xFFFFFFFF;   pixels[16799]=0xFFFFFFFF;
+
+   // Apply transparency if enabled
+   if(Logo_Transparent_BG)
+   {
+      for(int i = 0; i < 16800; i++)
       {
          // Convert white background (0xFFFFFFFF) to transparent (0x00FFFFFF)
          if(pixels[i] == 0xFFFFFFFF)
