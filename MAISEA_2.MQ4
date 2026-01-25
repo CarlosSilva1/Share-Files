@@ -921,8 +921,8 @@ int init()
    Print("✅ EA Inicializado com Sucesso - Proteção Ativa");
    Print("📅 Licença válida até: ", TimeToString(DataExpiracao, TIME_DATE));
   
-   // Na função init() - APÓS linha 951, ANTES de "return(INIT_SUCCEEDED);"
-DrawLogoMAIS_HD();
+   // Initialize HD Logo
+   DrawLogoMAIS_HD();
 
 
 
