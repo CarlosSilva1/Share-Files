@@ -891,18 +891,18 @@ double CalculateLotSize(double lotPerDollar, double kMultiplier)
 }
 void DrawLogoMAIS_HD() {
     
+     if(!Logo_Enable || !Display) return;
     
-    if(!Logo_Enable || !Display) return;
+    Print("🎨 Iniciando criação do Logo MAIS HD...");
     
     // Array de pixels (210x80 = 16,800 pixels)
     uint pixels[];
     ArrayResize(pixels, 16800, 0);
     
-   
     
-    // Lógica para adicionar os pixels do logo
-    // Cole os 16800 pixels aqui:
-    // pixels[0] ... pixels[16799]
+    
+    
+    
    pixels[0]=0xFFFFFFFF;   pixels[1]=0xFFFFFFFF;   pixels[2]=0xFFFFFFFF;   pixels[3]=0xFFFFFFFF;
    pixels[4]=0xFFFFFFFF;   pixels[5]=0xFFFFFFFF;   pixels[6]=0xFFFFFFFF;   pixels[7]=0xFFFFFFFF;
    pixels[8]=0xFFFFFFFF;   pixels[9]=0xFFFFFFFF;   pixels[10]=0xFFFFFFFF;   pixels[11]=0xFFFFFFFF;
@@ -5105,124 +5105,128 @@ void DrawLogoMAIS_HD() {
    pixels[16796]=0xFFFFFFFF;   pixels[16797]=0xFFFFFFFF;   pixels[16798]=0xFFFFFFFF;   pixels[16799]=0xFFFFFFFF;
    
    
-   // Dimensões e nome do logo
+   Print("✅ Array de ", ArraySize(pixels), " pixels carregado");
+    
+    // Aplica transparência ao fundo branco (se habilitado)
+    if(Logo_Transparent_BG)
+    {
+        Print("🔄 Aplicando transparência ao fundo branco...");
+        int transparentCount = 0;
+        
+        for(int i = 0; i < ArraySize(pixels); i++)
+        {
+            if(pixels[i] == 0xFFFFFFFF)  // Branco opaco
+            {
+                pixels[i] = 0x00FFFFFF;   // Branco transparente
+                transparentCount++;
+            }
+        }
+        
+        Print("✅ Transparência aplicada em ", transparentCount, " pixels");
+    }
+    
+    // Dimensões e nome do logo
     string logoName = "Logo_MAIS_HD";
     int logoWidth = 210;
     int logoHeight = 80;
     
-    // ========== DEBUG ANTES DE ResourceCreate ==========
-Print("╔═══════════════════════════════════════════════════════╗");
-Print("║ DEBUG ANTES DE ResourceCreate                         ║");
-Print("╠═══════════════════════════════════════════════════════╣");
-Print("║ logoName = ", logoName);
-Print("║ logoWidth = ", logoWidth);
-Print("║ logoHeight = ", logoHeight);
-Print("║ ArraySize(pixels) = ", ArraySize(pixels));
-Print("║ pixels[0] = 0x", IntegerToString(pixels[0], 0, 16));
-Print("║ pixels[16799] = 0x", IntegerToString(pixels[16799], 0, 16));
-Print("║ Logo_X_Distance = ", Logo_X_Distance);
-Print("║ Logo_Y_Distance = ", Logo_Y_Distance);
-Print("║ Logo_Corner = ", Logo_Corner);
-Print("║ Logo_Transparent_BG = ", Logo_Transparent_BG);
-Print("╚═══════════════════════════════════════════════════════╝");
-
-// ========== CRIA RECURSO BITMAP ==========
-if(ResourceCreate(logoName, pixels, logoWidth, logoHeight, 0, 0, logoWidth, COLOR_FORMAT_ARGB_NORMALIZE))
-{
-    Print("╔═══════════════════════════════════════════════════════╗");
-    Print("║ ✅✅✅ ResourceCreate() DEU CERTO! ✅✅✅               ║");
-    Print("╚═══════════════════════════════════════════════════════╝");
+    Print("📐 Dimensões: ", logoWidth, "x", logoHeight, " = ", logoWidth * logoHeight, " pixels");
+    Print("📍 Posição: X=", Logo_X_Distance, " Y=", Logo_Y_Distance, " Corner=", Logo_Corner);
     
-    // Cria objeto bitmap label se não existir
-    if(ObjectFind(0, logoName) < 0)
+    // Cria recurso bitmap
+    Print("🔧 Criando recurso bitmap...");
+    
+    if(ResourceCreate(logoName, pixels, logoWidth, logoHeight, 0, 0, logoWidth, COLOR_FORMAT_ARGB_NORMALIZE))
     {
-        Print(">>> Criando objeto OBJ_BITMAP_LABEL...");
-        bool obj_created = ObjectCreate(0, logoName, OBJ_BITMAP_LABEL, 0, 0, 0);
-        Print(">>> ObjectCreate() retornou: ", obj_created);
-        if(!obj_created)
-        {
-            Print(">>> ERRO ao criar objeto! GetLastError() = ", GetLastError());
-        }
-    }
-    else
-    {
-        Print(">>> Objeto JÁ EXISTE, apenas atualizando...");
-    }
-    
-    // Define propriedades do objeto
-    Print(">>> Definindo propriedades...");
-    ObjectSetInteger(0, logoName, OBJPROP_XDISTANCE, Logo_X_Distance);
-    ObjectSetInteger(0, logoName, OBJPROP_YDISTANCE, Logo_Y_Distance);
-    ObjectSetInteger(0, logoName, OBJPROP_CORNER, Logo_Corner);
-    ObjectSetInteger(0, logoName, OBJPROP_ANCHOR, CORNER_LEFT_UPPER);
-    ObjectSetInteger(0, logoName, OBJPROP_HIDDEN, true);
-    ObjectSetInteger(0, logoName, OBJPROP_SELECTABLE, false);
-    
-    Print("╔═══════════════════════════════════════════════════════╗");
-    Print("║ 🎉🎉🎉 LOGO CRIADO COM SUCESSO! 🎉🎉🎉               ║");
-    Print("║ Verifique o canto INFERIOR ESQUERDO do gráfico!       ║");
-    Print("║ X=", Logo_X_Distance, "px  Y=", Logo_Y_Distance, "px  Corner=", Logo_Corner, "          ║");
-    Print("╚═══════════════════════════════════════════════════════╝");
-}
-else
-{
-    Print("╔═══════════════════════════════════════════════════════╗");
-    Print("║ ❌❌❌ ResourceCreate() FALHOU! ❌❌❌                 ║");
-    Print("╠═══════════════════════════════════════════════════════╣");
-    Print("║ GetLastError() = ", GetLastError());
-    Print("║ POSSÍVEIS CAUSAS:                                     ║");
-    Print("║ 1. Recurso já existe com esse nome                   ║");
-    Print("║ 2. Memória insuficiente                              ║");
-    Print("║ 3. Formato de cor incorreto                          ║");
-    Print("╚═══════════════════════════════════════════════════════╝");
-}
-    
-    // ✅ CRIA RECURSO BITMAP COM PARÂMETROS CORRETOS
-   if(ResourceCreate(logoName, pixels, logoWidth, logoHeight, 0, 0, logoWidth, COLOR_FORMAT_ARGB_NORMALIZE))
-    {
+        Print("✅ ResourceCreate() sucesso!");
+        
         // Cria objeto bitmap label se não existir
         if(ObjectFind(0, logoName) < 0)
         {
-            ObjectCreate(0, logoName, OBJ_BITMAP_LABEL, 0, 0, 0);
+            Print("🎨 Criando objeto OBJ_BITMAP_LABEL...");
+            
+            if(ObjectCreate(0, logoName, OBJ_BITMAP_LABEL, 0, 0, 0))
+            {
+                Print("✅ ObjectCreate() sucesso!");
+            }
+            else
+            {
+                Print("❌ ObjectCreate() FALHOU! Erro: ", GetLastError());
+                return;
+            }
+        }
+        else
+        {
+            Print("ℹ️ Objeto já existe, atualizando...");
         }
         
-        // Define propriedades do objeto (SEM OBJ_XSIZE/YSIZE/ALPHA!)
+        // Define propriedades do objeto
+        Print("⚙️ Configurando propriedades...");
+        
         ObjectSetInteger(0, logoName, OBJPROP_XDISTANCE, Logo_X_Distance);
         ObjectSetInteger(0, logoName, OBJPROP_YDISTANCE, Logo_Y_Distance);
         ObjectSetInteger(0, logoName, OBJPROP_CORNER, Logo_Corner);
         ObjectSetInteger(0, logoName, OBJPROP_ANCHOR, CORNER_LEFT_UPPER);
-        ObjectSetInteger(0, logoName, OBJPROP_HIDDEN, true);
+        ObjectSetInteger(0, logoName, OBJPROP_HIDDEN, false);      // VISÍVEL
         ObjectSetInteger(0, logoName, OBJPROP_SELECTABLE, false);
+        
+        Print("╔═══════════════════════════════════════════════════════╗");
+        Print("║ ✅ LOGO MAIS HD CRIADO COM SUCESSO!                   ║");
+        Print("║ Nome: ", logoName);
+        Print("║ Tamanho: ", logoWidth, "x", logoHeight);
+        Print("║ Posição: (", Logo_X_Distance, ", ", Logo_Y_Distance, ")");
+        Print("║ Canto: ", Logo_Corner);
+        Print("║ Transparente: ", Logo_Transparent_BG);
+        Print("╚═══════════════════════════════════════════════════════╝");
     }
     else
     {
-        Print("Erro ao criar recurso do logo HD");
+        Print("╔═══════════════════════════════════════════════════════╗");
+        Print("║ ❌ ERRO AO CRIAR LOGO HD!                             ║");
+        Print("║ ResourceCreate() FALHOU!                              ║");
+        Print("║ Erro: ", GetLastError());
+        Print("╚═══════════════════════════════════════════════════════╝");
     }
-   
-   
-   
-   
+  
+  
+ 
+  
+  
    
    
    
 }
 
-//+------------------------------------------------------------------+
-//| Remove Logo MAIS HD do gráfico                                    |
-//+------------------------------------------------------------------+
+//════════════════════════════════════════════════════════════════
+// Remove Logo MAIS HD do gráfico
+//════════════════════════════════════════════════════════════════
 void DeleteLogoMAIS_HD()
 {
-   string logo_name = "Logo_MAIS_HD";
-   
-   // Remove objeto do gráfico
-   if(ObjectFind(0, logo_name) >= 0)
-   {
-      ObjectDelete(0, logo_name);
-   }
-   
-   // Libera recurso da memória
-   ResourceFree(logo_name);
-}  
+    string logoName = "Logo_MAIS_HD";
+    
+    Print("🗑️ Deletando Logo MAIS HD...");
+    
+    // Remove objeto do gráfico
+    if(ObjectFind(0, logoName) >= 0)
+    {
+        if(ObjectDelete(0, logoName))
+        {
+            Print("✅ Objeto deletado: ", logoName);
+        }
+        else
+        {
+            Print("⚠️ Falha ao deletar objeto. Erro: ", GetLastError());
+        }
+    }
+    else
+    {
+        Print("ℹ️ Objeto não encontrado: ", logoName);
+    }
+    
+    // Libera recurso da memória
+    ResourceFree(logoName);
+    Print("✅ Recurso liberado da memória");
+}
 
 //═══════════════════════════════════════════════════════════════════
 // 🔐 INITIALIZATION
