@@ -271,7 +271,7 @@ int OnInit()
    currentBalance = InitialBalance;
    maxBalance = InitialBalance;
    
-   // ═══════════════════════════════════════════════════════════════
+   // ═══════════════════════════════════════════════════���═══════════
    // ═══ INICIALIZAR CONTROLE DE REVERSE CLOSE (NOVO) ═══
    // ═══════════════════════════════════════════════════════════════
    activeTrade.hasPosition = false;
@@ -586,107 +586,75 @@ void CloseCurrentTrade(int currentBar, string reason)
    }
    
    // ═══════════════════════════════════════════════════════════════
-   // ✅ CORREÇÃO: Verificar se atingiu TP/SL e limitar preço
+   // ✅ BUSCAR A VELA QUE REALMENTE ATINGIU TP/SL
    // ═══════════════════════════════════════════════════════════════
    
-   // ═══════════════════════════════════════════════════════════════
-// ✅ BUSCAR A VELA QUE REALMENTE ATINGIU TP/SL
-// ═══════════════════════════════════════════════════════════════
-
-int closeBar = currentBar;  // Começar pela vela atual
-bool hitTP = false;
-bool hitSL = false;
-double closePrice = Close[currentBar];
-datetime closeTime = Time[currentBar];
-
-// Procurar para trás até encontrar a vela que atingiu TP/SL
-int entryBar = iBarShift(NULL, 0, activeTrade.openTime);
-
-for(int j = currentBar; j <= entryBar; j++)
-{
-   if(activeTrade.isBuy)
-   {
-      // COMPRA: verificar se atingiu TP ou SL
-      if(High[j] >= activeTrade.tpPrice)
-      {
-         hitTP = true;
-         closePrice = activeTrade.tpPrice;
-         closeTime = Time[j];
-         closeBar = j;
-         break;  // Encontrou a primeira vela que atingiu
-      }
-      if(Low[j] <= activeTrade.slPrice)
-      {
-         hitSL = true;
-         closePrice = activeTrade.slPrice;
-         closeTime = Time[j];
-         closeBar = j;
-         break;
-      }
-   }
-   else  // VENDA
-   {
-      if(Low[j] <= activeTrade.tpPrice)
-      {
-         hitTP = true;
-         closePrice = activeTrade.tpPrice;
-         closeTime = Time[j];
-         closeBar = j;
-         break;
-      }
-      if(High[j] >= activeTrade.slPrice)
-      {
-         hitSL = true;
-         closePrice = activeTrade.slPrice;
-         closeTime = Time[j];
-         closeBar = j;
-         break;
-      }
-   }
-}
-
-// Se não atingiu TP/SL, é fechamento parcial (Reverse Close)
-if(!hitTP && !hitSL)
-{
-   closePrice = Close[currentBar];
-   closeTime = Time[currentBar];
-   closeBar = currentBar;
-}
-
-Print("🔍 DEBUG CloseCurrentTrade:");
-Print("   Barra do novo sinal: ", currentBar);
-Print("   Barra que atingiu TP/SL: ", closeBar);
-Print("   Hit TP: ", hitTP, " | Hit SL: ", hitSL);
-Print("   Close Price: ", DoubleToString(closePrice, Digits));
-Print("   Close Time: ", TimeToString(closeTime));
+   int closeBar = currentBar;
+   bool hitTP = false;
+   bool hitSL = false;
+   double closePrice = Close[currentBar];
+   datetime closeTime = Time[currentBar];
    
-   // Verificar se ultrapassou TP ou SL
-   if(activeTrade.isBuy)
+   // Procurar para trás até encontrar a vela que atingiu TP/SL
+   int entryBar = iBarShift(NULL, 0, activeTrade.openTime);
+   
+   for(int j = currentBar; j <= entryBar; j++)
    {
-      if(closePrice >= activeTrade.tpPrice)
+      if(activeTrade.isBuy)
       {
-         hitTP = true;
-         closePrice = activeTrade.tpPrice;  // ✅ LIMITAR ao TP
+         // COMPRA: verificar se atingiu TP ou SL
+         if(High[j] >= activeTrade.tpPrice)
+         {
+            hitTP = true;
+            closePrice = activeTrade.tpPrice;
+            closeTime = Time[j];
+            closeBar = j;
+            break;
+         }
+         if(Low[j] <= activeTrade.slPrice)
+         {
+            hitSL = true;
+            closePrice = activeTrade.slPrice;
+            closeTime = Time[j];
+            closeBar = j;
+            break;
+         }
       }
-      else if(closePrice <= activeTrade.slPrice)
+      else  // VENDA
       {
-         hitSL = true;
-         closePrice = activeTrade.slPrice;  // ✅ LIMITAR ao SL
+         if(Low[j] <= activeTrade.tpPrice)
+         {
+            hitTP = true;
+            closePrice = activeTrade.tpPrice;
+            closeTime = Time[j];
+            closeBar = j;
+            break;
+         }
+         if(High[j] >= activeTrade.slPrice)
+         {
+            hitSL = true;
+            closePrice = activeTrade.slPrice;
+            closeTime = Time[j];
+            closeBar = j;
+            break;
+         }
       }
    }
-   else // VENDA
+   
+   // Se não atingiu TP/SL, é fechamento parcial (Reverse Close)
+   if(!hitTP && !hitSL)
    {
-      if(closePrice <= activeTrade.tpPrice)
-      {
-         hitTP = true;
-         closePrice = activeTrade.tpPrice;  // ✅ LIMITAR ao TP
-      }
-      else if(closePrice >= activeTrade.slPrice)
-      {
-         hitSL = true;
-         closePrice = activeTrade.slPrice;  // ✅ LIMITAR ao SL
-      }
+      closePrice = Close[currentBar];
+      closeTime = Time[currentBar];
+      closeBar = currentBar;
    }
+   
+   Print("🔍 DEBUG CloseCurrentTrade:");
+   Print("   Barra do novo sinal: ", currentBar);
+   Print("   Barra que atingiu TP/SL: ", closeBar);
+   Print("   Hit TP: ", hitTP, " | Hit SL: ", hitSL);
+   Print("   Close Price: ", DoubleToString(closePrice, Digits));
+   Print("   Close Time: ", TimeToString(closeTime));
    
    // ═══════════════════════════════════════════════════════════════
    // ✅ CALCULAR LUCRO/PERDA COM LIMITES
@@ -696,12 +664,12 @@ Print("   Close Time: ", TimeToString(closeTime));
    
    if(hitTP)
    {
-      // ✅ Atingiu TP: usar cálculo fixo (igual ao CheckTradeResults)
+      // ✅ Atingiu TP: usar cálculo fixo
       profit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
    }
    else if(hitSL)
    {
-      // ✅ Atingiu SL: usar cálculo fixo (igual ao CheckTradeResults)
+      // ✅ Atingiu SL: usar cálculo fixo
       profit = -(InitialBalance * RiskPerTrade / 100);
    }
    else
@@ -733,17 +701,8 @@ Print("   Close Time: ", TimeToString(closeTime));
    // Atualizar trade
    int idx = activeTrade.tradeIndex;
    trades[idx].closeTime = closeTime;
-   trades[idx].exitPrice = closePrice;  // ✅ ADICIONAR ESTA LINHA
+   trades[idx].exitPrice = closePrice;
    trades[idx].profitUSD = profit;
-   
-   // ✅ DEBUG: Verificar se os dados estão corretos
-   Print("🔍 DEBUG CloseCurrentTrade:");
-   Print("   Trade #", idx);
-   Print("   openTime: ", TimeToString(trades[idx].openTime));
-   Print("   closeTime: ", TimeToString(trades[idx].closeTime));
-   Print("   entryPrice: ", DoubleToString(trades[idx].entryPrice, Digits));
-   Print("   exitPrice: ", DoubleToString(trades[idx].exitPrice, Digits));
-   Print("   status: ", trades[idx].status);
    
    if(profit > 0)
    {
@@ -776,8 +735,6 @@ Print("   Close Time: ", TimeToString(closeTime));
          " | Exit: ", exitType,
          " | Preço: ", DoubleToString(closePrice, Digits),
          " | Resultado: ", result, " $", DoubleToString(profit, 2));
-     
-           
    
    // Limpar controle
    activeTrade.hasPosition = false;
@@ -853,7 +810,7 @@ void GenerateBuySignal(int i)
       trades[tradeIdx].status = 0;
       trades[tradeIdx].barIndex = i;
       trades[tradeIdx].linesDrawn = false;
-      trades[tradeIdx].resultDrawn = false;  // ✅ ADICIONAR ESTA LINHA
+      trades[tradeIdx].resultDrawn = false;
       
       totalTrades++;
       
@@ -886,7 +843,7 @@ void GenerateBuySignal(int i)
          if(ObjectCreate(0, slName, OBJ_HLINE, 0, 0, sl))
          {
             ObjectSetInteger(0, slName, OBJPROP_COLOR, clrRed);
-            ObjectSetInteger(0, slName, OBJPROP_STYLE, STYLE_DOT);  // ✅ PONTILHADO
+            ObjectSetInteger(0, slName, OBJPROP_STYLE, STYLE_DOT);
             ObjectSetInteger(0, slName, OBJPROP_WIDTH, 1);
             ObjectSetInteger(0, slName, OBJPROP_BACK, true);
             ObjectSetInteger(0, slName, OBJPROP_SELECTABLE, false);
@@ -895,7 +852,7 @@ void GenerateBuySignal(int i)
          if(ObjectCreate(0, tpName, OBJ_HLINE, 0, 0, tp))
          {
             ObjectSetInteger(0, tpName, OBJPROP_COLOR, clrDodgerBlue);
-            ObjectSetInteger(0, tpName, OBJPROP_STYLE, STYLE_DOT);  // ✅ PONTILHADO
+            ObjectSetInteger(0, tpName, OBJPROP_STYLE, STYLE_DOT);
             ObjectSetInteger(0, tpName, OBJPROP_WIDTH, 1);
             ObjectSetInteger(0, tpName, OBJPROP_BACK, true);
             ObjectSetInteger(0, tpName, OBJPROP_SELECTABLE, false);
@@ -977,7 +934,7 @@ void GenerateSellSignal(int i)
       return;
    }
    
-   // ═══ SEMPRE REGISTRAR TRADE (durante varredura E ao vivo) ═���═
+   // ═══ SEMPRE REGISTRAR TRADE (durante varredura E ao vivo) ═══
    if(EnableBacktest)
    {
       int tradeIdx = totalTrades;
@@ -994,7 +951,7 @@ void GenerateSellSignal(int i)
       trades[tradeIdx].status = 0;
       trades[tradeIdx].barIndex = i;
       trades[tradeIdx].linesDrawn = false;
-      trades[tradeIdx].resultDrawn = false;  // ✅ ADICIONAR ESTA LINHA
+      trades[tradeIdx].resultDrawn = false;
       
       totalTrades++;
       
@@ -1027,7 +984,7 @@ void GenerateSellSignal(int i)
          if(ObjectCreate(0, slName, OBJ_HLINE, 0, 0, sl))
          {
             ObjectSetInteger(0, slName, OBJPROP_COLOR, clrRed);
-            ObjectSetInteger(0, slName, OBJPROP_STYLE, STYLE_DOT);  // ✅ PONTILHADO
+            ObjectSetInteger(0, slName, OBJPROP_STYLE, STYLE_DOT);
             ObjectSetInteger(0, slName, OBJPROP_WIDTH, 1);
             ObjectSetInteger(0, slName, OBJPROP_BACK, true);
             ObjectSetInteger(0, slName, OBJPROP_SELECTABLE, false);
@@ -1036,7 +993,7 @@ void GenerateSellSignal(int i)
          if(ObjectCreate(0, tpName, OBJ_HLINE, 0, 0, tp))
          {
             ObjectSetInteger(0, tpName, OBJPROP_COLOR, clrDodgerBlue);
-            ObjectSetInteger(0, tpName, OBJPROP_STYLE, STYLE_DOT);  // ✅ PONTILHADO
+            ObjectSetInteger(0, tpName, OBJPROP_STYLE, STYLE_DOT);
             ObjectSetInteger(0, tpName, OBJPROP_WIDTH, 1);
             ObjectSetInteger(0, tpName, OBJPROP_BACK, true);
             ObjectSetInteger(0, tpName, OBJPROP_SELECTABLE, false);
