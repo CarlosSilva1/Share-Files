@@ -557,7 +557,7 @@ bool IsPivotLow(int shift)
 }
 
 //+------------------------------------------------------------------+
-//| Fechar Trade Atual (REVERSE CLOSE) - FUNÇÃO NOVA                 |
+//| Fechar Trade Atual (REVERSE CLOSE) - CORRIGIDO                   |
 //+------------------------------------------------------------------+
 void CloseCurrentTrade(int currentBar, string reason)
 {
@@ -583,23 +583,84 @@ void CloseCurrentTrade(int currentBar, string reason)
       return;
    }
    
-   // Preço de fechamento
+   // ═══════════════════════════════════════════════════════════════
+   // ✅ CORREÇÃO: Verificar se atingiu TP/SL e limitar preço
+   // ═══════════════════════════════════════════════════════════════
+   
    double closePrice = Close[currentBar];
    datetime closeTime = Time[currentBar];
    
-   // Calcular lucro/perda
-   double profit = 0;
-   double riskPoints = MathAbs(activeTrade.entryPrice - activeTrade.slPrice) / Point;
+   bool hitTP = false;
+   bool hitSL = false;
    
+   // Verificar se ultrapassou TP ou SL
    if(activeTrade.isBuy)
    {
-      double gainPoints = (closePrice - activeTrade.entryPrice) / Point;
-      profit = (gainPoints / riskPoints) * (InitialBalance * RiskPerTrade / 100);
+      if(closePrice >= activeTrade.tpPrice)
+      {
+         hitTP = true;
+         closePrice = activeTrade.tpPrice;  // ✅ LIMITAR ao TP
+      }
+      else if(closePrice <= activeTrade.slPrice)
+      {
+         hitSL = true;
+         closePrice = activeTrade.slPrice;  // ✅ LIMITAR ao SL
+      }
+   }
+   else // VENDA
+   {
+      if(closePrice <= activeTrade.tpPrice)
+      {
+         hitTP = true;
+         closePrice = activeTrade.tpPrice;  // ✅ LIMITAR ao TP
+      }
+      else if(closePrice >= activeTrade.slPrice)
+      {
+         hitSL = true;
+         closePrice = activeTrade.slPrice;  // ✅ LIMITAR ao SL
+      }
+   }
+   
+   // ═══════════════════════════════════════════════════════════════
+   // ✅ CALCULAR LUCRO/PERDA COM LIMITES
+   // ═══════════════════════════════════════════════════════════════
+   
+   double profit = 0;
+   
+   if(hitTP)
+   {
+      // ✅ Atingiu TP: usar cálculo fixo (igual ao CheckTradeResults)
+      profit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
+   }
+   else if(hitSL)
+   {
+      // ✅ Atingiu SL: usar cálculo fixo (igual ao CheckTradeResults)
+      profit = -(InitialBalance * RiskPerTrade / 100);
    }
    else
    {
-      double gainPoints = (activeTrade.entryPrice - closePrice) / Point;
-      profit = (gainPoints / riskPoints) * (InitialBalance * RiskPerTrade / 100);
+      // ✅ Fechou antes de atingir TP/SL: calcular proporcional
+      double riskPoints = MathAbs(activeTrade.entryPrice - activeTrade.slPrice) / Point;
+      
+      if(activeTrade.isBuy)
+      {
+         double gainPoints = (closePrice - activeTrade.entryPrice) / Point;
+         profit = (gainPoints / riskPoints) * (InitialBalance * RiskPerTrade / 100);
+      }
+      else
+      {
+         double gainPoints = (activeTrade.entryPrice - closePrice) / Point;
+         profit = (gainPoints / riskPoints) * (InitialBalance * RiskPerTrade / 100);
+      }
+      
+      // ✅ LIMITAR o lucro/perda aos valores máximos
+      double maxProfit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
+      double maxLoss = -(InitialBalance * RiskPerTrade / 100);
+      
+      if(profit > maxProfit)
+         profit = maxProfit;
+      else if(profit < maxLoss)
+         profit = maxLoss;
    }
    
    // Atualizar trade
@@ -632,8 +693,11 @@ void CloseCurrentTrade(int currentBar, string reason)
    
    string type = activeTrade.isBuy ? "COMPRA" : "VENDA";
    string result = (profit > 0) ? "WIN" : "LOSS";
+   string exitType = hitTP ? "TP" : (hitSL ? "SL" : "PARCIAL");
    
    Print("🔄 REVERSE CLOSE: ", type, " fechada | Razão: ", reason, 
+         " | Exit: ", exitType,
+         " | Preço: ", DoubleToString(closePrice, Digits),
          " | Resultado: ", result, " $", DoubleToString(profit, 2));
    
    // Limpar controle
@@ -804,7 +868,7 @@ void GenerateSellSignal(int i)
    if(i >= 0 && i < ArraySize(SellSignalBuf))
       SellSignalBuf[i] = entry;
    
-   // ══════════════���════════════════════════════════════════════
+   // ═══════════════════════════════════════════════════════════
    // 🔄 REVERSE CLOSE LOGIC
    // ═══════════════════════════════════════════════════════════
    
@@ -833,7 +897,7 @@ void GenerateSellSignal(int i)
       return;
    }
    
-   // ═══ SEMPRE REGISTRAR TRADE (durante varredura E ao vivo) ═══
+   // ═══ SEMPRE REGISTRAR TRADE (durante varredura E ao vivo) ═���═
    if(EnableBacktest)
    {
       int tradeIdx = totalTrades;
