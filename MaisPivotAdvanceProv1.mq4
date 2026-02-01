@@ -418,11 +418,24 @@ void RegisterTradeLines(int tradeIndex, string entry, string sl, string tp)
 }
 
 //+------------------------------------------------------------------+
-//| Verificar se é Pivô High                                         |
+//| Verificar se é Pivô High (CORRIGIDO - Array Safe)               |
 //+------------------------------------------------------------------+
 bool IsPivotHigh(int shift)
 {
-   if(shift < PivotStrength || shift > Bars - PivotStrength - 1)
+   // ✅ PROTEÇÃO 1: Verificar limites básicos
+   if(shift < PivotStrength || shift < 0)
+      return false;
+   
+   // ✅ PROTEÇÃO 2: Verificar se há barras suficientes
+   int totalBars = Bars;
+   if(totalBars <= 0)
+      return false;
+      
+   if(shift >= totalBars - PivotStrength - 1)
+      return false;
+   
+   // ✅ PROTEÇÃO 3: Verificar tamanho do array
+   if(shift >= ArraySize(High))
       return false;
       
    double centerHigh = High[shift];
@@ -430,14 +443,26 @@ bool IsPivotHigh(int shift)
    // Verificar barras À ESQUERDA
    for(int i = 1; i <= PivotStrength; i++)
    {
-      if(High[shift + i] >= centerHigh)
+      int leftBar = shift + i;
+      
+      // ✅ PROTEÇÃO: Verificar limites antes de acessar
+      if(leftBar < 0 || leftBar >= totalBars || leftBar >= ArraySize(High))
+         return false;
+         
+      if(High[leftBar] >= centerHigh)
          return false;
    }
    
    // Verificar barras À DIREITA
    for(int i = 1; i <= PivotStrength; i++)
    {
-      if(High[shift - i] >= centerHigh)
+      int rightBar = shift - i;
+      
+      // ✅ PROTEÇÃO: Verificar limites antes de acessar
+      if(rightBar < 0 || rightBar >= totalBars || rightBar >= ArraySize(High))
+         return false;
+         
+      if(High[rightBar] >= centerHigh)
          return false;
    }
    
@@ -445,11 +470,24 @@ bool IsPivotHigh(int shift)
 }
 
 //+------------------------------------------------------------------+
-//| Verificar se é Pivô Low                                          |
+//| Verificar se é Pivô Low (CORRIGIDO - Array Safe)                |
 //+------------------------------------------------------------------+
 bool IsPivotLow(int shift)
 {
-   if(shift < PivotStrength || shift > Bars - PivotStrength - 1)
+   // ✅ PROTEÇÃO 1: Verificar limites básicos
+   if(shift < PivotStrength || shift < 0)
+      return false;
+   
+   // ✅ PROTEÇÃO 2: Verificar se há barras suficientes
+   int totalBars = Bars;
+   if(totalBars <= 0)
+      return false;
+      
+   if(shift >= totalBars - PivotStrength - 1)
+      return false;
+   
+   // ✅ PROTEÇÃO 3: Verificar tamanho do array
+   if(shift >= ArraySize(Low))
       return false;
       
    double centerLow = Low[shift];
@@ -457,14 +495,26 @@ bool IsPivotLow(int shift)
    // Verificar barras À ESQUERDA
    for(int i = 1; i <= PivotStrength; i++)
    {
-      if(Low[shift + i] <= centerLow)
+      int leftBar = shift + i;
+      
+      // ✅ PROTEÇÃO: Verificar limites antes de acessar
+      if(leftBar < 0 || leftBar >= totalBars || leftBar >= ArraySize(Low))
+         return false;
+         
+      if(Low[leftBar] <= centerLow)
          return false;
    }
    
    // Verificar barras À DIREITA
    for(int i = 1; i <= PivotStrength; i++)
    {
-      if(Low[shift - i] <= centerLow)
+      int rightBar = shift - i;
+      
+      // ✅ PROTEÇÃO: Verificar limites antes de acessar
+      if(rightBar < 0 || rightBar >= totalBars || rightBar >= ArraySize(Low))
+         return false;
+         
+      if(Low[rightBar] <= centerLow)
          return false;
    }
    
@@ -472,10 +522,17 @@ bool IsPivotLow(int shift)
 }
 
 //+------------------------------------------------------------------+
-//| Gerar Sinal de Compra - REGISTRA SEMPRE, LINHAS APENAS AO VIVO  |
+//| Gerar Sinal de Compra (CORRIGIDO - Array Safe)                  |
 //+------------------------------------------------------------------+
 void GenerateBuySignal(int i)
 {
+   // ✅ PROTEÇÃO: Verificar índice válido
+   if(i < 0 || i >= ArraySize(Close))
+   {
+      Print("⚠️ GenerateBuySignal: Índice inválido i=", i);
+      return;
+   }
+   
    if(!PassEntryFilters(true, i))
       return;
    
@@ -483,7 +540,9 @@ void GenerateBuySignal(int i)
    double sl = 0.0, tp = 0.0;
    CalculateSLTP(true, i, lastBuyPivotPrice, sl, tp);
    
-   BuySignalBuf[i] = entry;
+   // ✅ PROTEÇÃO: Verificar antes de escrever no buffer
+   if(i >= 0 && i < ArraySize(BuySignalBuf))
+      BuySignalBuf[i] = entry;
    
    // ═══ SEMPRE REGISTRAR TRADE (durante varredura E ao vivo) ═══
    if(EnableBacktest)
@@ -491,7 +550,10 @@ void GenerateBuySignal(int i)
       int tradeIdx = totalTrades;
       ArrayResize(trades, totalTrades + 1);
       
-      trades[tradeIdx].openTime = Time[i];
+      // ✅ PROTEÇÃO: Verificar acesso ao array Time
+      datetime tradeTime = (i >= 0 && i < ArraySize(Time)) ? Time[i] : TimeCurrent();
+      
+      trades[tradeIdx].openTime = tradeTime;
       trades[tradeIdx].entryPrice = entry;
       trades[tradeIdx].slPrice = sl;
       trades[tradeIdx].tpPrice = tp;
@@ -505,9 +567,9 @@ void GenerateBuySignal(int i)
       // ═══ DESENHAR LINHAS HLINE APENAS AO VIVO (não durante varredura) ═══
       if(ShowSLTPLines && !isScanningHistory)
       {
-         string entryName = "MPP_ENTRY_BUY_" + TimeToString(Time[i], TIME_DATE|TIME_SECONDS);
-         string slName = "MPP_SL_BUY_" + TimeToString(Time[i], TIME_DATE|TIME_SECONDS);
-         string tpName = "MPP_TP_BUY_" + TimeToString(Time[i], TIME_DATE|TIME_SECONDS);
+         string entryName = "MPP_ENTRY_BUY_" + TimeToString(tradeTime, TIME_DATE|TIME_SECONDS);
+         string slName = "MPP_SL_BUY_" + TimeToString(tradeTime, TIME_DATE|TIME_SECONDS);
+         string tpName = "MPP_TP_BUY_" + TimeToString(tradeTime, TIME_DATE|TIME_SECONDS);
          
          // Criar linhas horizontais
          if(ObjectCreate(0, entryName, OBJ_HLINE, 0, 0, entry))
@@ -553,7 +615,7 @@ void GenerateBuySignal(int i)
    // Alerta apenas ao vivo
    if(EnableAlerts && !isScanningHistory && TimeCurrent() - lastAlertTime > 5)
    {
-      string msg = "🟢 SINAL DE COMPRA em " + Symbol();
+      string msg = "��� SINAL DE COMPRA em " + Symbol();
       Alert(msg);
       lastAlertTime = TimeCurrent();
    }
@@ -562,10 +624,17 @@ void GenerateBuySignal(int i)
 }
 
 //+------------------------------------------------------------------+
-//| Gerar Sinal de Venda - REGISTRA SEMPRE, LINHAS APENAS AO VIVO   |
+//| Gerar Sinal de Venda (CORRIGIDO - Array Safe)                   |
 //+------------------------------------------------------------------+
 void GenerateSellSignal(int i)
 {
+   // ✅ PROTEÇÃO: Verificar índice válido
+   if(i < 0 || i >= ArraySize(Close))
+   {
+      Print("⚠️ GenerateSellSignal: Índice inválido i=", i);
+      return;
+   }
+   
    if(!PassEntryFilters(false, i))
       return;
    
@@ -573,7 +642,9 @@ void GenerateSellSignal(int i)
    double sl = 0.0, tp = 0.0;
    CalculateSLTP(false, i, lastSellPivotPrice, sl, tp);
    
-   SellSignalBuf[i] = entry;
+   // ✅ PROTEÇÃO: Verificar antes de escrever no buffer
+   if(i >= 0 && i < ArraySize(SellSignalBuf))
+      SellSignalBuf[i] = entry;
    
    // ═══ SEMPRE REGISTRAR TRADE (durante varredura E ao vivo) ═══
    if(EnableBacktest)
@@ -581,7 +652,10 @@ void GenerateSellSignal(int i)
       int tradeIdx = totalTrades;
       ArrayResize(trades, totalTrades + 1);
       
-      trades[tradeIdx].openTime = Time[i];
+      // ✅ PROTEÇÃO: Verificar acesso ao array Time
+      datetime tradeTime = (i >= 0 && i < ArraySize(Time)) ? Time[i] : TimeCurrent();
+      
+      trades[tradeIdx].openTime = tradeTime;
       trades[tradeIdx].entryPrice = entry;
       trades[tradeIdx].slPrice = sl;
       trades[tradeIdx].tpPrice = tp;
@@ -595,9 +669,9 @@ void GenerateSellSignal(int i)
       // ═══ DESENHAR LINHAS HLINE APENAS AO VIVO (não durante varredura) ═══
       if(ShowSLTPLines && !isScanningHistory)
       {
-         string entryName = "MPP_ENTRY_SELL_" + TimeToString(Time[i], TIME_DATE|TIME_SECONDS);
-         string slName = "MPP_SL_SELL_" + TimeToString(Time[i], TIME_DATE|TIME_SECONDS);
-         string tpName = "MPP_TP_SELL_" + TimeToString(Time[i], TIME_DATE|TIME_SECONDS);
+         string entryName = "MPP_ENTRY_SELL_" + TimeToString(tradeTime, TIME_DATE|TIME_SECONDS);
+         string slName = "MPP_SL_SELL_" + TimeToString(tradeTime, TIME_DATE|TIME_SECONDS);
+         string tpName = "MPP_TP_SELL_" + TimeToString(tradeTime, TIME_DATE|TIME_SECONDS);
          
          // Criar linhas horizontais
          if(ObjectCreate(0, entryName, OBJ_HLINE, 0, 0, entry))
@@ -650,7 +724,6 @@ void GenerateSellSignal(int i)
    
    lastSellPivotBar = -1;
 }
-
 
 
 // Bloco 4
