@@ -132,11 +132,13 @@ struct TradeInfo
    int status;           // 0=Aberto, 1=Win, 2=Loss
    double profitUSD;
    datetime closeTime;
+   double exitPrice;     // ✅ ADICIONAR ESTA LINHA
    int barIndex;
    string entryLineName;
    string slLineName;
    string tpLineName;
    bool linesDrawn;
+   bool resultDrawn;     // ✅ ADICIONAR ESTA LINHA
 };
 
 TradeInfo trades[];
@@ -666,6 +668,7 @@ void CloseCurrentTrade(int currentBar, string reason)
    // Atualizar trade
    int idx = activeTrade.tradeIndex;
    trades[idx].closeTime = closeTime;
+   trades[idx].exitPrice = closePrice;  // ✅ ADICIONAR ESTA LINHA
    trades[idx].profitUSD = profit;
    
    if(profit > 0)
@@ -699,6 +702,8 @@ void CloseCurrentTrade(int currentBar, string reason)
          " | Exit: ", exitType,
          " | Preço: ", DoubleToString(closePrice, Digits),
          " | Resultado: ", result, " $", DoubleToString(profit, 2));
+     
+           
    
    // Limpar controle
    activeTrade.hasPosition = false;
@@ -774,6 +779,7 @@ void GenerateBuySignal(int i)
       trades[tradeIdx].status = 0;
       trades[tradeIdx].barIndex = i;
       trades[tradeIdx].linesDrawn = false;
+      trades[tradeIdx].resultDrawn = false;  // ✅ ADICIONAR ESTA LINHA
       
       totalTrades++;
       
@@ -1219,6 +1225,26 @@ int OnCalculate(const int rates_total,
    // ═══ PROCESSAR TRADES ABERTOS ═══
    CheckTradeResults();
    
+   
+   // ═══════════════════════════════════════════════════════════════
+   // ✅ DESENHAR RESULTADOS DE TRADES FECHADOS (UMA VEZ APENAS)
+   // ═══════════════════════════════════════════════════════════════
+   if(ShowSLTPLines)
+   {
+      for(int i = 0; i < totalTrades; i++)
+      {
+         // Apenas trades fechados que ainda não foram desenhados
+         if(trades[i].status != 0 && !trades[i].resultDrawn)
+         {
+            DrawTradeResult(i);
+            trades[i].resultDrawn = true;  // Marcar como desenhado
+            Print("🎨 Resultado desenhado para trade #", i, " | Status: ", 
+                  trades[i].status == 1 ? "WIN" : "LOSS");
+         }
+      }
+   }
+   
+   
    // ═══ ATUALIZAR PAINEL ═══
    if(TimeCurrent() - lastPanelUpdate >= 1)
    {
@@ -1283,9 +1309,7 @@ void CheckTradeResults()
          string reason = hitTP ? "Take Profit atingido" : "Stop Loss atingido";
          CloseCurrentTrade(0, reason);
          
-         // ✅ ADICIONAR: Desenhar resultado visual
-         if(ShowSLTPLines)
-            DrawTradeResult(idx);
+       
       }
       
       return; // Não precisa verificar outros trades
@@ -1330,6 +1354,12 @@ void CheckTradeResults()
          {
             trades[i].closeTime = Time[j];
             
+            // ✅ ARMAZENAR PREÇO DE SAÍDA REAL
+            if(hitTP)
+               trades[i].exitPrice = trades[i].tpPrice;
+            else
+               trades[i].exitPrice = trades[i].slPrice;
+            
             double riskPoints = MathAbs(trades[i].entryPrice - trades[i].slPrice) / Point;
             double profit = 0;
             
@@ -1359,7 +1389,7 @@ void CheckTradeResults()
                maxDrawdown = dd;
             
             // ✅ ADICIONAR: Desenhar resultado visual
-            if(ShowSLTPLines && !isScanningHistory)
+            if(ShowSLTPLines )
                DrawTradeResult(i);
             
             string result = hitTP ? "WIN ✅" : "LOSS ❌";
@@ -1688,26 +1718,31 @@ void RegisterTrade(bool isBuy, int bar, double entry, double sl, double tp)
 }
 
 //+------------------------------------------------------------------+
-//| Desenhar Resultado do Trade (COM LINHA PONTILHADA)               |
+//| Desenhar Resultado - VERSÃO TESTE MÍNIMA                         |
 //+------------------------------------------------------------------+
 void DrawTradeResult(int tradeIdx)
 {
+   // ✅ PROTEÇÕES BÁSICAS
    if(tradeIdx < 0 || tradeIdx >= totalTrades)
+   {
+      Print("❌ DrawTradeResult: Índice inválido ", tradeIdx);
       return;
+   }
    
-   if(trades[tradeIdx].status == 0) // Ainda aberto
+   if(trades[tradeIdx].status == 0)
+   {
+      Print("⚠️ DrawTradeResult: Trade #", tradeIdx, " ainda aberto");
       return;
+   }
    
+   // ✅ DADOS DO TRADE
    bool isWin = (trades[tradeIdx].status == 1);
    datetime openTime = trades[tradeIdx].openTime;
    datetime closeTime = trades[tradeIdx].closeTime;
    double entry = trades[tradeIdx].entryPrice;
    double exitPrice = isWin ? trades[tradeIdx].tpPrice : trades[tradeIdx].slPrice;
    
-   // ═══════════════════════════════════════════════════════════
-   // 1️⃣ DELETAR LINHAS HLINE ANTIGAS (se existirem)
-   // ═══════════════════════════════════════════════════════════
-   
+   // ✅ DELETAR LINHAS HLINE ANTIGAS (se existirem)
    if(trades[tradeIdx].linesDrawn)
    {
       ObjectDelete(0, trades[tradeIdx].entryLineName);
@@ -1716,79 +1751,35 @@ void DrawTradeResult(int tradeIdx)
       trades[tradeIdx].linesDrawn = false;
    }
    
-   // ═══════════════════════════════════════════════════════════
-   // 2️⃣ DESENHAR LINHA OBJ_TREND PONTILHADA (Entry → Exit)
-   // ═══════════════════════════════════════════════════════════
-   
+   // ✅ CRIAR LINHA PONTILHADA (Entry → Exit)
    string lineName = prefix + "RESULT_LINE_" + TimeToString(openTime, TIME_DATE|TIME_SECONDS);
    
+   // Verificar se já existe
+   if(ObjectFind(0, lineName) >= 0)
+   {
+      Print("⚠️ Linha já existe: ", lineName);
+      return;  // JÁ EXISTE, NÃO REDESENHAR
+   }
+   
+   // Criar linha
    if(ObjectCreate(0, lineName, OBJ_TREND, 0, openTime, entry, closeTime, exitPrice))
    {
-      // ✅ WIN = AZUL PONTILHADO | LOSS = VERMELHO PONTILHADO
       ObjectSetInteger(0, lineName, OBJPROP_COLOR, isWin ? clrDodgerBlue : clrRed);
-      ObjectSetInteger(0, lineName, OBJPROP_STYLE, STYLE_DOT); // ✅ PONTILHADO
+      ObjectSetInteger(0, lineName, OBJPROP_STYLE, STYLE_DOT);
       ObjectSetInteger(0, lineName, OBJPROP_WIDTH, 2);
       ObjectSetInteger(0, lineName, OBJPROP_BACK, true);
       ObjectSetInteger(0, lineName, OBJPROP_SELECTABLE, false);
-      ObjectSetInteger(0, lineName, OBJPROP_RAY_RIGHT, false); // Não estender
-   }
-   
-   // ═══════════════════════════════════════════════════════════
-   // 3️⃣ DESENHAR SETA DE RESULTADO (↑ WIN ou ↓ LOSS)
-   // ═══════════════════════════════════════════════════════════
-   
-   string resultArrow = prefix + "RESULT_ARROW_" + TimeToString(closeTime, TIME_DATE|TIME_SECONDS);
-   
-   if(ObjectCreate(0, resultArrow, OBJ_ARROW, 0, closeTime, exitPrice))
-   {
-      if(isWin)
-      {
-         ObjectSetInteger(0, resultArrow, OBJPROP_ARROWCODE, 233); // Seta para cima
-         ObjectSetInteger(0, resultArrow, OBJPROP_COLOR, clrDodgerBlue);
-         ObjectSetInteger(0, resultArrow, OBJPROP_ANCHOR, ANCHOR_BOTTOM);
-      }
-      else
-      {
-         ObjectSetInteger(0, resultArrow, OBJPROP_ARROWCODE, 234); // Seta para baixo
-         ObjectSetInteger(0, resultArrow, OBJPROP_COLOR, clrRed);
-         ObjectSetInteger(0, resultArrow, OBJPROP_ANCHOR, ANCHOR_TOP);
-      }
+      ObjectSetInteger(0, lineName, OBJPROP_RAY_RIGHT, false);
       
-      ObjectSetInteger(0, resultArrow, OBJPROP_WIDTH, 3);
-      ObjectSetInteger(0, resultArrow, OBJPROP_BACK, false);
-      ObjectSetInteger(0, resultArrow, OBJPROP_SELECTABLE, false);
-   }
-   
-   // ═══════════════════════════════════════════════════════════
-   // 4️⃣ DESENHAR TEXTO DO RESULTADO (WIN +$100.00 ou LOSS -$50.00)
-   // ═══════════════════════════════════════════════════════════
-   
-   string resultText = prefix + "RESULT_TEXT_" + TimeToString(closeTime, TIME_DATE|TIME_SECONDS);
-   
-   string text;
-   if(isWin)
-   {
-      text = StringFormat("WIN +$%.2f", trades[tradeIdx].profitUSD);
+      string text = isWin ? StringFormat("WIN +$%.2f", trades[tradeIdx].profitUSD) : 
+                            StringFormat("LOSS -$%.2f", MathAbs(trades[tradeIdx].profitUSD));
+      
+      Print("🎨 Resultado desenhado: ", text, " | Trade #", tradeIdx);
    }
    else
    {
-      text = StringFormat("LOSS -$%.2f", MathAbs(trades[tradeIdx].profitUSD));
+      Print("❌ ERRO ao criar linha: ", GetLastError());
    }
-   
-   double textPrice = isWin ? exitPrice + 30*Point : exitPrice - 40*Point;
-   
-   if(ObjectCreate(0, resultText, OBJ_TEXT, 0, closeTime, textPrice))
-   {
-      ObjectSetString(0, resultText, OBJPROP_TEXT, text);
-      ObjectSetInteger(0, resultText, OBJPROP_COLOR, isWin ? clrDodgerBlue : clrRed);
-      ObjectSetInteger(0, resultText, OBJPROP_FONTSIZE, 9);
-      ObjectSetString(0, resultText, OBJPROP_FONT, "Arial Bold");
-      ObjectSetInteger(0, resultText, OBJPROP_BACK, false);
-      ObjectSetInteger(0, resultText, OBJPROP_SELECTABLE, false);
-   }
-   
-   Print("🎨 Resultado desenhado: ", text, " | Trade #", tradeIdx);
-   DrawAllClosedTradeResults();
 }
 
 
