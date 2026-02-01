@@ -581,8 +581,10 @@ void CloseCurrentTrade(int currentBar, string reason)
    }
    
    // ═══════════════════════════════════════════════════════════════
-   // ✅ BUSCAR A VELA QUE REALMENTE ATINGIU TP/SL
+   // ✅ IDENTIFICAR TIPO DE FECHAMENTO PELA "REASON"
    // ═══════════════════════════════════════════════════════════════
+   
+   bool isReverseClose = (StringFind(reason, "Reverse") >= 0);
    
    int closeBar = currentBar;
    bool hitTP = false;
@@ -590,55 +592,63 @@ void CloseCurrentTrade(int currentBar, string reason)
    double closePrice = Close[currentBar];
    datetime closeTime = Time[currentBar];
    
-   int entryBar = iBarShift(NULL, 0, activeTrade.openTime);
-   
-   for(int j = currentBar; j <= entryBar; j++)
-   {
-      if(activeTrade.isBuy)
-      {
-         if(High[j] >= activeTrade.tpPrice)
-         {
-            hitTP = true;
-            closePrice = activeTrade.tpPrice;
-            closeTime = Time[j];
-            closeBar = j;
-            break;
-         }
-         if(Low[j] <= activeTrade.slPrice)
-         {
-            hitSL = true;
-            closePrice = activeTrade.slPrice;
-            closeTime = Time[j];
-            closeBar = j;
-            break;
-         }
-      }
-      else
-      {
-         if(Low[j] <= activeTrade.tpPrice)
-         {
-            hitTP = true;
-            closePrice = activeTrade.tpPrice;
-            closeTime = Time[j];
-            closeBar = j;
-            break;
-         }
-         if(High[j] >= activeTrade.slPrice)
-         {
-            hitSL = true;
-            closePrice = activeTrade.slPrice;
-            closeTime = Time[j];
-            closeBar = j;
-            break;
-         }
-      }
-   }
-   
-   if(!hitTP && !hitSL)
+   // ✅ SE FOR REVERSE CLOSE, NÃO PROCURAR TP/SL (usar Close da vela)
+   if(isReverseClose)
    {
       closePrice = Close[currentBar];
       closeTime = Time[currentBar];
       closeBar = currentBar;
+      hitTP = false;  // ✅ Forçar false
+      hitSL = false;  // ✅ Forçar false
+      
+      Print("🔄 REVERSE CLOSE DETECTADO - Usando Close da vela");
+   }
+   else
+   {
+      // ✅ SE NÃO FOR REVERSE, BUSCAR A VELA QUE ATINGIU TP/SL
+      int entryBar = iBarShift(NULL, 0, activeTrade.openTime);
+      
+      for(int j = currentBar; j <= entryBar; j++)
+      {
+         if(activeTrade.isBuy)
+         {
+            if(High[j] >= activeTrade.tpPrice)
+            {
+               hitTP = true;
+               closePrice = activeTrade.tpPrice;
+               closeTime = Time[j];
+               closeBar = j;
+               break;
+            }
+            if(Low[j] <= activeTrade.slPrice)
+            {
+               hitSL = true;
+               closePrice = activeTrade.slPrice;
+               closeTime = Time[j];
+               closeBar = j;
+               break;
+            }
+         }
+         else
+         {
+            if(Low[j] <= activeTrade.tpPrice)
+            {
+               hitTP = true;
+               closePrice = activeTrade.tpPrice;
+               closeTime = Time[j];
+               closeBar = j;
+               break;
+            }
+            if(High[j] >= activeTrade.slPrice)
+            {
+               hitSL = true;
+               closePrice = activeTrade.slPrice;
+               closeTime = Time[j];
+               closeBar = j;
+               break;
+            }
+         }
+      }
    }
    
    // ✅ VALIDAÇÃO: Verificar se exitPrice está dentro da vela
@@ -659,6 +669,8 @@ void CloseCurrentTrade(int currentBar, string reason)
    }
    
    Print("🔍 DEBUG CloseCurrentTrade:");
+   Print("   Reason: ", reason);
+   Print("   Is Reverse: ", isReverseClose ? "SIM" : "NÃO");
    Print("   Barra do novo sinal: ", currentBar);
    Print("   Barra que atingiu TP/SL: ", closeBar);
    Print("   Hit TP: ", hitTP, " | Hit SL: ", hitSL);
@@ -671,13 +683,16 @@ void CloseCurrentTrade(int currentBar, string reason)
    if(hitTP)
    {
       profit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
+      Print("   💰 Cálculo: TP atingido = $", DoubleToString(profit, 2));
    }
    else if(hitSL)
    {
       profit = -(InitialBalance * RiskPerTrade / 100);
+      Print("   💰 Cálculo: SL atingido = $", DoubleToString(profit, 2));
    }
    else
    {
+      // ✅ FECHAMENTO PARCIAL (REVERSE)
       double riskPoints = MathAbs(activeTrade.entryPrice - activeTrade.slPrice) / Point;
       
       if(activeTrade.isBuy)
@@ -691,13 +706,24 @@ void CloseCurrentTrade(int currentBar, string reason)
          profit = (gainPoints / riskPoints) * (InitialBalance * RiskPerTrade / 100);
       }
       
+      Print("   💰 Cálculo PROPORCIONAL:");
+      Print("      Risk Points: ", DoubleToString(riskPoints, 2));
+      Print("      Gain Points: ", DoubleToString(activeTrade.isBuy ? (closePrice - activeTrade.entryPrice) / Point : (activeTrade.entryPrice - closePrice) / Point, 2));
+      Print("      Profit: $", DoubleToString(profit, 2));
+      
       double maxProfit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
       double maxLoss = -(InitialBalance * RiskPerTrade / 100);
       
       if(profit > maxProfit)
+      {
+         Print("      ⚠️ Lucro LIMITADO: $", DoubleToString(profit, 2), " → $", DoubleToString(maxProfit, 2));
          profit = maxProfit;
+      }
       else if(profit < maxLoss)
+      {
+         Print("      ⚠️ Perda LIMITADA: $", DoubleToString(profit, 2), " → $", DoubleToString(maxLoss, 2));
          profit = maxLoss;
+      }
    }
    
    int idx = activeTrade.tradeIndex;
