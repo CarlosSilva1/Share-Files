@@ -558,9 +558,6 @@ bool IsPivotLow(int shift)
    return true;
 }
 
-//+------------------------------------------------------------------+
-//| Fechar Trade Atual (REVERSE CLOSE) - CORRIGIDO                   |
-//+------------------------------------------------------------------+
 void CloseCurrentTrade(int currentBar, string reason)
 {
    if(!activeTrade.hasPosition)
@@ -569,7 +566,6 @@ void CloseCurrentTrade(int currentBar, string reason)
       return;
    }
    
-   // Verificar se índice é válido
    if(activeTrade.tradeIndex < 0 || activeTrade.tradeIndex >= totalTrades)
    {
       Print("❌ Erro: Índice de trade inválido");
@@ -577,7 +573,6 @@ void CloseCurrentTrade(int currentBar, string reason)
       return;
    }
    
-   // Verificar se trade ainda está aberto
    if(trades[activeTrade.tradeIndex].status != 0)
    {
       Print("⚠️ Trade já foi fechado anteriormente");
@@ -595,14 +590,12 @@ void CloseCurrentTrade(int currentBar, string reason)
    double closePrice = Close[currentBar];
    datetime closeTime = Time[currentBar];
    
-   // Procurar para trás até encontrar a vela que atingiu TP/SL
    int entryBar = iBarShift(NULL, 0, activeTrade.openTime);
    
    for(int j = currentBar; j <= entryBar; j++)
    {
       if(activeTrade.isBuy)
       {
-         // COMPRA: verificar se atingiu TP ou SL
          if(High[j] >= activeTrade.tpPrice)
          {
             hitTP = true;
@@ -620,7 +613,7 @@ void CloseCurrentTrade(int currentBar, string reason)
             break;
          }
       }
-      else  // VENDA
+      else
       {
          if(Low[j] <= activeTrade.tpPrice)
          {
@@ -641,12 +634,28 @@ void CloseCurrentTrade(int currentBar, string reason)
       }
    }
    
-   // Se não atingiu TP/SL, é fechamento parcial (Reverse Close)
    if(!hitTP && !hitSL)
    {
       closePrice = Close[currentBar];
       closeTime = Time[currentBar];
       closeBar = currentBar;
+   }
+   
+   // ✅ VALIDAÇÃO: Verificar se exitPrice está dentro da vela
+   int closeBarIndex = iBarShift(NULL, 0, closeTime);
+   if(closeBarIndex >= 0 && closeBarIndex < Bars)
+   {
+      bool priceInsideBar = (closePrice >= Low[closeBarIndex] && closePrice <= High[closeBarIndex]);
+      
+      if(!priceInsideBar)
+      {
+         Print("⚠️ CORREÇÃO: Exit price ", DoubleToString(closePrice, Digits), 
+               " fora da vela [", DoubleToString(Low[closeBarIndex], Digits), 
+               " - ", DoubleToString(High[closeBarIndex], Digits), "]");
+         closePrice = Close[closeBarIndex];
+         hitTP = false;
+         hitSL = false;
+      }
    }
    
    Print("🔍 DEBUG CloseCurrentTrade:");
@@ -656,25 +665,19 @@ void CloseCurrentTrade(int currentBar, string reason)
    Print("   Close Price: ", DoubleToString(closePrice, Digits));
    Print("   Close Time: ", TimeToString(closeTime));
    
-   // ═══════════════════════════════════════════════════════════════
-   // ✅ CALCULAR LUCRO/PERDA COM LIMITES
-   // ═══════════════════════════════════════════════════════════════
-   
+   // ═══ CALCULAR LUCRO/PERDA ═══
    double profit = 0;
    
    if(hitTP)
    {
-      // ✅ Atingiu TP: usar cálculo fixo
       profit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
    }
    else if(hitSL)
    {
-      // ✅ Atingiu SL: usar cálculo fixo
       profit = -(InitialBalance * RiskPerTrade / 100);
    }
    else
    {
-      // ✅ Fechou antes de atingir TP/SL: calcular proporcional
       double riskPoints = MathAbs(activeTrade.entryPrice - activeTrade.slPrice) / Point;
       
       if(activeTrade.isBuy)
@@ -688,7 +691,6 @@ void CloseCurrentTrade(int currentBar, string reason)
          profit = (gainPoints / riskPoints) * (InitialBalance * RiskPerTrade / 100);
       }
       
-      // ✅ LIMITAR o lucro/perda aos valores máximos
       double maxProfit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
       double maxLoss = -(InitialBalance * RiskPerTrade / 100);
       
@@ -698,7 +700,6 @@ void CloseCurrentTrade(int currentBar, string reason)
          profit = maxLoss;
    }
    
-   // Atualizar trade
    int idx = activeTrade.tradeIndex;
    trades[idx].closeTime = closeTime;
    trades[idx].exitPrice = closePrice;
@@ -706,18 +707,17 @@ void CloseCurrentTrade(int currentBar, string reason)
    
    if(profit > 0)
    {
-      trades[idx].status = 1; // Win
+      trades[idx].status = 1;
       totalWins++;
       totalProfitUSD += profit;
    }
    else
    {
-      trades[idx].status = 2; // Loss
+      trades[idx].status = 2;
       totalLosses++;
       totalLossUSD += MathAbs(profit);
    }
    
-   // Atualizar balance
    currentBalance += profit;
    
    if(currentBalance > maxBalance)
@@ -736,7 +736,6 @@ void CloseCurrentTrade(int currentBar, string reason)
          " | Preço: ", DoubleToString(closePrice, Digits),
          " | Resultado: ", result, " $", DoubleToString(profit, 2));
    
-   // Limpar controle
    activeTrade.hasPosition = false;
    activeTrade.tradeIndex = -1;
 }
