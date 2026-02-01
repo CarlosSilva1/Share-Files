@@ -105,7 +105,7 @@ double lastSellPivotPrice = 0.0;
 
 // Controle de Alertas
 datetime lastAlertTime = 0;
-string lastAlertMessage = "";
+string lastAlertMessage = "";        // ✅ NECESSÁRIA para SendTradeAlert()
 
 // Controle de Varredura
 int barsToScan = 0;
@@ -113,11 +113,19 @@ int lastScanPercentage = -1;
 bool needsReset = false;
 int totalBarsAvailable = 0;
 
-// ═══ CONTROLE DE TRIGGER DE VELA ═══
-datetime lastProcessedBarTime = 0;  // Última barra processada
-bool isNewBar = false;               // Flag de nova barra
-bool isScanningHistory = true;       // Flag de varredura inicial
-int initialBars = 0;                 // Total de barras no início
+// Controle de trigger de vela
+datetime lastProcessedBarTime = 0;
+bool isNewBar = false;
+bool isScanningHistory = true;
+int initialBars = 0;
+
+// Rastreamento do período de varredura
+datetime firstBarProcessed = 0;     // ✅ NECESSÁRIA no Bloco 4
+datetime lastBarProcessed = 0;      // ✅ NECESSÁRIA no Bloco 4
+int totalDaysCovered = 0;           // ✅ NECESSÁRIA no Bloco 4
+
+// Controle de atualização
+datetime lastPanelUpdate = 0;       // ✅ NECESSÁRIA no Bloco 4
 
 //+------------------------------------------------------------------+
 //| ESTRUTURA PARA RASTREAMENTO DE TRADES                            |
@@ -132,27 +140,27 @@ struct TradeInfo
    int status;           // 0=Aberto, 1=Win, 2=Loss
    double profitUSD;
    datetime closeTime;
-   double exitPrice;     // ✅ ADICIONAR ESTA LINHA
+   double exitPrice;
    int barIndex;
    string entryLineName;
    string slLineName;
    string tpLineName;
    bool linesDrawn;
-   bool resultDrawn;     // ✅ ADICIONAR ESTA LINHA
+   bool resultDrawn;
 };
 
 TradeInfo trades[];
 int totalTrades = 0;
 
-// ═══ CONTROLE DE LINHAS POR TRADE ═══
+// Controle de linhas por trade
 struct LineControl
 {
-   int tradeIndex;        // Índice do trade associado
-   string entryLine;      // Nome da linha Entry
-   string slLine;         // Nome da linha SL
-   string tpLine;         // Nome da linha TP
-   bool active;           // Linha está ativa?
-   datetime created;      // Quando foi criada
+   int tradeIndex;
+   string entryLine;
+   string slLine;
+   string tpLine;
+   bool active;
+   datetime created;
 };
 
 LineControl activeLines[];
@@ -168,38 +176,22 @@ double maxBalance = 0.0;
 double maxDrawdown = 0.0;
 double profitFactor = 0.0;
 
-// Controle de atualização
-datetime lastTradeCheck = 0;
-datetime lastPanelUpdate = 0;
-datetime lastBarTime = 0;
-
-// ═══ RASTREAMENTO DO PERÍODO DE VARREDURA ═══
-datetime firstBarProcessed = 0;
-datetime lastBarProcessed = 0;
-int totalDaysCovered = 0;
-
-// ═══ CONTROLE DE LIMPEZA DE LINHAS ═══
-datetime lastChartScroll = 0;
-int lastVisibleBars = 0;
-ENUM_TIMEFRAMES lastPeriod = PERIOD_CURRENT;
-int lastFirstVisibleBar = 0;
-bool chartMoved = false;
-
-// ═══════════════════════════════════════════════════════════════
-// ═══ CONTROLE DE REVERSE CLOSE (NOVO) ═══
-// ═══════════════════════════════════════════════════════════════
+// Controle de Reverse Close
 struct ActiveTradeControl
 {
-   bool hasPosition;          // Tem posição aberta?
-   bool isBuy;                // É compra ou venda?
-   datetime openTime;         // Quando abriu
-   double entryPrice;         // Preço de entrada
-   double slPrice;            // Stop Loss
-   double tpPrice;            // Take Profit
-   int tradeIndex;            // Índice no array trades[]
+   bool hasPosition;
+   bool isBuy;
+   datetime openTime;
+   double entryPrice;
+   double slPrice;
+   double tpPrice;
+   int tradeIndex;
 };
 
 ActiveTradeControl activeTrade;
+
+// ✅ NOVO: Controle de Debug
+bool EnableDebugLogs = false;  // ← ADICIONAR ESTA LINHA SE NÃO EXISTIR
 
 // Bloco 3
 
@@ -225,13 +217,13 @@ int OnInit()
    
    // ➡️ Buffer 2: Confirmação de Compra (SETA AZUL)
    SetIndexBuffer(2, BuyConfirmBuf);
-   SetIndexStyle(2, DRAW_ARROW, EMPTY, 2, BuyConfirmColor);
+   SetIndexStyle(2, DRAW_NONE);  // ✅ AGORA INVISÍVEL
    SetIndexArrow(2, 233);
    SetIndexLabel(2, "Confirmação de Compra");
    
    // ➡️ Buffer 3: Confirmação de Venda (SETA VERMELHA)
    SetIndexBuffer(3, SellConfirmBuf);
-   SetIndexStyle(3, DRAW_ARROW, EMPTY, 2, SellConfirmColor);
+   SetIndexStyle(3, DRAW_NONE);  // ✅ AGORA INVISÍVEL
    SetIndexArrow(3, 234);
    SetIndexLabel(3, "Confirmação de Venda");
    
@@ -252,11 +244,10 @@ int OnInit()
    if(ScanPercentage == 0)
    {
       ResetFinancialMetrics();
-      barsToScan = 50; // Apenas últimas 50 barras
+      barsToScan = 50;
    }
    else
    {
-      // Calcular quantas barras varrer
       barsToScan = (int)(totalBarsAvailable * (ScanPercentage / 100.0));
       if(barsToScan > MaxLookback) barsToScan = MaxLookback;
       if(barsToScan < 50) barsToScan = 50;
@@ -271,9 +262,7 @@ int OnInit()
    currentBalance = InitialBalance;
    maxBalance = InitialBalance;
    
-   // ═══════════════════════════════════════════════════���═══════════
-   // ═══ INICIALIZAR CONTROLE DE REVERSE CLOSE (NOVO) ═══
-   // ═══════════════════════════════════════════════════════════════
+   // Inicializar controle de Reverse Close
    activeTrade.hasPosition = false;
    activeTrade.isBuy = false;
    activeTrade.openTime = 0;
@@ -282,9 +271,10 @@ int OnInit()
    activeTrade.tpPrice = 0;
    activeTrade.tradeIndex = -1;
    
-   Print("MAIS PIVOT PRO iniciado | Barras disponíveis: ", totalBarsAvailable, 
-         " | Varredura: ", barsToScan, " barras (", ScanPercentage, "%)");
+   Print("MAIS PIVOT PRO iniciado | Barras: ", totalBarsAvailable, 
+         " | Varredura: ", barsToScan, " (", ScanPercentage, "%)");
    Print("🔄 Reverse Close: ", (UseReverseClose ? "ATIVADO" : "DESATIVADO"));
+   Print("🐛 Debug Logs: ", (EnableDebugLogs ? "ATIVADO" : "DESATIVADO"));
    
    return(INIT_SUCCEEDED);
 }
@@ -300,7 +290,7 @@ void OnDeinit(const int reason)
    string reasonText = "";
    switch(reason)
    {
-      case REASON_REMOVE: reasonText = "Removido do gráfico"; break;
+      case REASON_REMOVE: reasonText = "Removido"; break;
       case REASON_RECOMPILE: reasonText = "Recompilado"; break;
       case REASON_CHARTCHANGE: reasonText = "Mudança de período"; break;
       case REASON_CHARTCLOSE: reasonText = "Gráfico fechado"; break;
@@ -310,6 +300,57 @@ void OnDeinit(const int reason)
    }
    
    Print("❌ MAIS PIVOT PRO REMOVIDO | Motivo: ", reasonText);
+}
+
+//+------------------------------------------------------------------+
+//| Desenhar Seta com Tooltip do Trade (NOVO)                        |
+//+------------------------------------------------------------------+
+void DrawEntryArrowWithTooltip(int tradeIdx, datetime time, double price, bool isBuy, double entryPrice, double sl, double tp)
+{
+   string arrowName = prefix + "ENTRY_ARROW_" + IntegerToString(tradeIdx) + "_" + TimeToString(time, TIME_SECONDS);
+   
+   // Deletar se já existir
+   if(ObjectFind(0, arrowName) >= 0)
+      ObjectDelete(0, arrowName);
+   
+   // Criar seta
+   if(ObjectCreate(0, arrowName, OBJ_ARROW, 0, time, price))
+   {
+      // Configurar seta
+      if(isBuy)
+      {
+         ObjectSetInteger(0, arrowName, OBJPROP_ARROWCODE, 233);  // Seta para cima
+         ObjectSetInteger(0, arrowName, OBJPROP_COLOR, clrDodgerBlue);
+      }
+      else
+      {
+         ObjectSetInteger(0, arrowName, OBJPROP_ARROWCODE, 234);  // Seta para baixo
+         ObjectSetInteger(0, arrowName, OBJPROP_COLOR, clrRed);
+      }
+      
+      ObjectSetInteger(0, arrowName, OBJPROP_WIDTH, 2);
+      ObjectSetInteger(0, arrowName, OBJPROP_BACK, false);
+      ObjectSetInteger(0, arrowName, OBJPROP_SELECTABLE, true);  // ✅ Importante para tooltip funcionar
+      
+      // Calcular distâncias em pontos
+      double slDistance = MathAbs(entryPrice - sl);
+      double tpDistance = MathAbs(tp - entryPrice);
+      double slPoints = slDistance / Point;
+      double tpPoints = tpDistance / Point;
+      
+      // Criar tooltip
+      string tooltip = StringFormat(
+         "Trade #%d | %s\nEntry: %.2f\nSL: %.2fpts | TP: %.2fpts\nR:R = 1:%.1f",
+         tradeIdx,
+         isBuy ? "BUY" : "SELL",
+         entryPrice,
+         slPoints,
+         tpPoints,
+         tpPoints / slPoints
+      );
+      
+      ObjectSetString(0, arrowName, OBJPROP_TOOLTIP, tooltip);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -341,7 +382,9 @@ void DeleteAllIndicatorObjects()
    }
    
    WindowRedraw();
-   Print("✅ ", totalDeleted, " objetos removidos");
+   
+   if(totalDeleted > 0)
+      Print("✅ ", totalDeleted, " objetos removidos");
 }
 
 //+------------------------------------------------------------------+
@@ -380,18 +423,12 @@ void ResetFinancialMetrics()
 }
 
 //+------------------------------------------------------------------+
-//| Calcular Estatísticas (compatibilidade)                         |
-//+------------------------------------------------------------------+
-void CalculateStats()
-{
-   CalculateMetrics();
-}
-
-//+------------------------------------------------------------------+
-//| Limpar Linhas de Trades Encerrados                               |
+//| Limpar Linhas de Trades Encerrados (OTIMIZADO)                   |
 //+------------------------------------------------------------------+
 void CleanupClosedTradeLines()
 {
+   int removed = 0;
+   
    for(int i = totalActiveLines - 1; i >= 0; i--)
    {
       if(!activeLines[i].active)
@@ -399,26 +436,20 @@ void CleanupClosedTradeLines()
          
       int tradeIdx = activeLines[i].tradeIndex;
       
-      // Verificar se o trade foi encerrado
       if(tradeIdx >= 0 && tradeIdx < totalTrades)
       {
-         if(trades[tradeIdx].status != 0) // Trade fechado (Win ou Loss)
+         if(trades[tradeIdx].status != 0)
          {
-            // Deletar as linhas
             ObjectDelete(0, activeLines[i].entryLine);
             ObjectDelete(0, activeLines[i].slLine);
             ObjectDelete(0, activeLines[i].tpLine);
-            
-            // Marcar como inativa
             activeLines[i].active = false;
-            
-            Print("🗑️ Linhas removidas para trade #", tradeIdx, 
-                  " (", trades[tradeIdx].status == 1 ? "WIN" : "LOSS", ")");
+            removed++;
          }
       }
    }
    
-   // Compactar array removendo linhas inativas
+   // Compactar array
    int newSize = 0;
    for(int i = 0; i < totalActiveLines; i++)
    {
@@ -430,18 +461,20 @@ void CleanupClosedTradeLines()
       }
    }
    totalActiveLines = newSize;
+   
+   // ✅ Log único
+   if(removed > 0 && EnableDebugLogs)
+      Print("🗑️ ", removed, " linhas removidas");
 }
 
 //+------------------------------------------------------------------+
-//| Registrar Linhas de um Trade                                     |
+//| Registrar Linhas de um Trade (OTIMIZADO - SEM LOG)               |
 //+------------------------------------------------------------------+
 void RegisterTradeLines(int tradeIndex, string entry, string sl, string tp)
 {
-   // Aumentar array se necessário
    if(totalActiveLines >= ArraySize(activeLines))
       ArrayResize(activeLines, totalActiveLines + 10);
    
-   // Registrar linhas
    activeLines[totalActiveLines].tradeIndex = tradeIndex;
    activeLines[totalActiveLines].entryLine = entry;
    activeLines[totalActiveLines].slLine = sl;
@@ -450,20 +483,16 @@ void RegisterTradeLines(int tradeIndex, string entry, string sl, string tp)
    activeLines[totalActiveLines].created = TimeCurrent();
    
    totalActiveLines++;
-   
-   Print("📌 Linhas registradas para trade #", tradeIndex);
 }
 
 //+------------------------------------------------------------------+
-//| Verificar se é Pivô High (CORRIGIDO - Array Safe)               |
+//| Verificar se é Pivô High (Array Safe)                            |
 //+------------------------------------------------------------------+
 bool IsPivotHigh(int shift)
 {
-   // ✅ PROTEÇÃO 1: Verificar limites básicos
    if(shift < PivotStrength || shift < 0)
       return false;
    
-   // ✅ PROTEÇÃO 2: Verificar se há barras suficientes
    int totalBars = Bars;
    if(totalBars <= 0)
       return false;
@@ -471,18 +500,15 @@ bool IsPivotHigh(int shift)
    if(shift >= totalBars - PivotStrength - 1)
       return false;
    
-   // ✅ PROTEÇÃO 3: Verificar tamanho do array
    if(shift >= ArraySize(High))
       return false;
       
    double centerHigh = High[shift];
    
-   // Verificar barras À ESQUERDA
    for(int i = 1; i <= PivotStrength; i++)
    {
       int leftBar = shift + i;
       
-      // ✅ PROTEÇÃO: Verificar limites antes de acessar
       if(leftBar < 0 || leftBar >= totalBars || leftBar >= ArraySize(High))
          return false;
          
@@ -490,12 +516,10 @@ bool IsPivotHigh(int shift)
          return false;
    }
    
-   // Verificar barras À DIREITA
    for(int i = 1; i <= PivotStrength; i++)
    {
       int rightBar = shift - i;
       
-      // ✅ PROTEÇÃO: Verificar limites antes de acessar
       if(rightBar < 0 || rightBar >= totalBars || rightBar >= ArraySize(High))
          return false;
          
@@ -507,15 +531,13 @@ bool IsPivotHigh(int shift)
 }
 
 //+------------------------------------------------------------------+
-//| Verificar se é Pivô Low (CORRIGIDO - Array Safe)                |
+//| Verificar se é Pivô Low (Array Safe)                             |
 //+------------------------------------------------------------------+
 bool IsPivotLow(int shift)
 {
-   // ✅ PROTEÇÃO 1: Verificar limites básicos
    if(shift < PivotStrength || shift < 0)
       return false;
    
-   // ✅ PROTEÇÃO 2: Verificar se há barras suficientes
    int totalBars = Bars;
    if(totalBars <= 0)
       return false;
@@ -523,18 +545,15 @@ bool IsPivotLow(int shift)
    if(shift >= totalBars - PivotStrength - 1)
       return false;
    
-   // ✅ PROTEÇÃO 3: Verificar tamanho do array
    if(shift >= ArraySize(Low))
       return false;
       
    double centerLow = Low[shift];
    
-   // Verificar barras À ESQUERDA
    for(int i = 1; i <= PivotStrength; i++)
    {
       int leftBar = shift + i;
       
-      // ✅ PROTEÇÃO: Verificar limites antes de acessar
       if(leftBar < 0 || leftBar >= totalBars || leftBar >= ArraySize(Low))
          return false;
          
@@ -542,12 +561,10 @@ bool IsPivotLow(int shift)
          return false;
    }
    
-   // Verificar barras À DIREITA
    for(int i = 1; i <= PivotStrength; i++)
    {
       int rightBar = shift - i;
       
-      // ✅ PROTEÇÃO: Verificar limites antes de acessar
       if(rightBar < 0 || rightBar >= totalBars || rightBar >= ArraySize(Low))
          return false;
          
@@ -558,31 +575,34 @@ bool IsPivotLow(int shift)
    return true;
 }
 
+//+------------------------------------------------------------------+
+//| Fechar Trade Atual (OTIMIZADO)                                   |
+//+------------------------------------------------------------------+
 void CloseCurrentTrade(int currentBar, string reason)
 {
+   // Validações silenciosas durante scan
    if(!activeTrade.hasPosition)
    {
-      Print("⚠️ CloseCurrentTrade: Nenhum trade ativo para fechar");
+      if(EnableDebugLogs && !isScanningHistory)
+         Print("⚠️ Nenhum trade ativo para fechar");
       return;
    }
    
    if(activeTrade.tradeIndex < 0 || activeTrade.tradeIndex >= totalTrades)
    {
-      Print("❌ Erro: Índice de trade inválido");
+      if(EnableDebugLogs && !isScanningHistory)
+         Print("❌ Índice de trade inválido");
       activeTrade.hasPosition = false;
       return;
    }
    
    if(trades[activeTrade.tradeIndex].status != 0)
    {
-      Print("⚠️ Trade já foi fechado anteriormente");
+      if(EnableDebugLogs && !isScanningHistory)
+         Print("⚠️ Trade já foi fechado");
       activeTrade.hasPosition = false;
       return;
    }
-   
-   // ═══════════════════════════════════════════════════════════════
-   // ✅ IDENTIFICAR TIPO DE FECHAMENTO PELA "REASON"
-   // ═══════════════════════════════════════════════════════════════
    
    bool isReverseClose = (StringFind(reason, "Reverse") >= 0);
    
@@ -592,20 +612,16 @@ void CloseCurrentTrade(int currentBar, string reason)
    double closePrice = Close[currentBar];
    datetime closeTime = Time[currentBar];
    
-   // ✅ SE FOR REVERSE CLOSE, NÃO PROCURAR TP/SL (usar Close da vela)
    if(isReverseClose)
    {
       closePrice = Close[currentBar];
       closeTime = Time[currentBar];
       closeBar = currentBar;
-      hitTP = false;  // ✅ Forçar false
-      hitSL = false;  // ✅ Forçar false
-      
-      Print("🔄 REVERSE CLOSE DETECTADO - Usando Close da vela");
+      hitTP = false;
+      hitSL = false;
    }
    else
    {
-      // ✅ SE NÃO FOR REVERSE, BUSCAR A VELA QUE ATINGIU TP/SL
       int entryBar = iBarShift(NULL, 0, activeTrade.openTime);
       
       for(int j = currentBar; j <= entryBar; j++)
@@ -651,7 +667,7 @@ void CloseCurrentTrade(int currentBar, string reason)
       }
    }
    
-   // ✅ VALIDAÇÃO: Verificar se exitPrice está dentro da vela
+   // Validação
    int closeBarIndex = iBarShift(NULL, 0, closeTime);
    if(closeBarIndex >= 0 && closeBarIndex < Bars)
    {
@@ -659,40 +675,38 @@ void CloseCurrentTrade(int currentBar, string reason)
       
       if(!priceInsideBar)
       {
-         Print("⚠️ CORREÇÃO: Exit price ", DoubleToString(closePrice, Digits), 
-               " fora da vela [", DoubleToString(Low[closeBarIndex], Digits), 
-               " - ", DoubleToString(High[closeBarIndex], Digits), "]");
+         if(EnableDebugLogs)
+            Print("⚠️ Exit price fora da vela, usando Close");
          closePrice = Close[closeBarIndex];
          hitTP = false;
          hitSL = false;
       }
    }
    
-   Print("🔍 DEBUG CloseCurrentTrade:");
-   Print("   Reason: ", reason);
-   Print("   Is Reverse: ", isReverseClose ? "SIM" : "NÃO");
-   Print("   Barra do novo sinal: ", currentBar);
-   Print("   Barra que atingiu TP/SL: ", closeBar);
-   Print("   Hit TP: ", hitTP, " | Hit SL: ", hitSL);
-   Print("   Close Price: ", DoubleToString(closePrice, Digits));
-   Print("   Close Time: ", TimeToString(closeTime));
+   // ✅ DEBUG condicional
+   if(EnableDebugLogs)
+   {
+      Print("🔍 DEBUG CloseCurrentTrade:");
+      Print("   Reason: ", reason);
+      Print("   Reverse: ", isReverseClose ? "SIM" : "NÃO");
+      Print("   Bar: ", currentBar, " → ", closeBar);
+      Print("   TP/SL: ", hitTP, "/", hitSL);
+      Print("   Price: ", DoubleToString(closePrice, Digits));
+   }
    
-   // ═══ CALCULAR LUCRO/PERDA ═══
+   // Calcular lucro
    double profit = 0;
    
    if(hitTP)
    {
       profit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
-      Print("   💰 Cálculo: TP atingido = $", DoubleToString(profit, 2));
    }
    else if(hitSL)
    {
       profit = -(InitialBalance * RiskPerTrade / 100);
-      Print("   💰 Cálculo: SL atingido = $", DoubleToString(profit, 2));
    }
    else
    {
-      // ✅ FECHAMENTO PARCIAL (REVERSE)
       double riskPoints = MathAbs(activeTrade.entryPrice - activeTrade.slPrice) / Point;
       
       if(activeTrade.isBuy)
@@ -706,26 +720,20 @@ void CloseCurrentTrade(int currentBar, string reason)
          profit = (gainPoints / riskPoints) * (InitialBalance * RiskPerTrade / 100);
       }
       
-      Print("   💰 Cálculo PROPORCIONAL:");
-      Print("      Risk Points: ", DoubleToString(riskPoints, 2));
-      Print("      Gain Points: ", DoubleToString(activeTrade.isBuy ? (closePrice - activeTrade.entryPrice) / Point : (activeTrade.entryPrice - closePrice) / Point, 2));
-      Print("      Profit: $", DoubleToString(profit, 2));
-      
       double maxProfit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
       double maxLoss = -(InitialBalance * RiskPerTrade / 100);
       
       if(profit > maxProfit)
-      {
-         Print("      ⚠️ Lucro LIMITADO: $", DoubleToString(profit, 2), " → $", DoubleToString(maxProfit, 2));
          profit = maxProfit;
-      }
       else if(profit < maxLoss)
-      {
-         Print("      ⚠️ Perda LIMITADA: $", DoubleToString(profit, 2), " → $", DoubleToString(maxLoss, 2));
          profit = maxLoss;
-      }
    }
    
+   // ✅ Log simplificado
+   if(EnableDebugLogs)
+      Print("   💰 ", (hitTP ? "TP" : (hitSL ? "SL" : "Parcial")), " = $", DoubleToString(profit, 2));
+   
+   // Atualizar trade
    int idx = activeTrade.tradeIndex;
    trades[idx].closeTime = closeTime;
    trades[idx].exitPrice = closePrice;
@@ -753,28 +761,29 @@ void CloseCurrentTrade(int currentBar, string reason)
    if(dd > maxDrawdown)
       maxDrawdown = dd;
    
-   string type = activeTrade.isBuy ? "COMPRA" : "VENDA";
-   string result = (profit > 0) ? "WIN" : "LOSS";
-   string exitType = hitTP ? "TP" : (hitSL ? "SL" : "PARCIAL");
-   
-   Print("🔄 REVERSE CLOSE: ", type, " fechada | Razão: ", reason, 
-         " | Exit: ", exitType,
-         " | Preço: ", DoubleToString(closePrice, Digits),
-         " | Resultado: ", result, " $", DoubleToString(profit, 2));
+   // ✅ Log limpo apenas ao vivo
+   if(!isScanningHistory)
+   {
+      string type = activeTrade.isBuy ? "COMPRA" : "VENDA";
+      string result = (profit > 0) ? "WIN" : "LOSS";
+      string exitType = hitTP ? "TP" : (hitSL ? "SL" : "REVERSE");
+      
+      Print("💼 ", type, " fechada | ", exitType, " | ", result, " $", DoubleToString(profit, 2));
+   }
    
    activeTrade.hasPosition = false;
    activeTrade.tradeIndex = -1;
 }
 
 //+------------------------------------------------------------------+
-//| Gerar Sinal de Compra (COM REVERSE CLOSE)                        |
+//| Gerar Sinal de Compra (COM TOOLTIP)                              |
 //+------------------------------------------------------------------+
 void GenerateBuySignal(int i)
 {
-   // ✅ PROTEÇÃO: Verificar índice válido
    if(i < 0 || i >= ArraySize(Close))
    {
-      Print("⚠️ GenerateBuySignal: Índice inválido i=", i);
+      if(EnableDebugLogs)
+         Print("⚠️ GenerateBuySignal: Índice inválido i=", i);
       return;
    }
    
@@ -785,46 +794,40 @@ void GenerateBuySignal(int i)
    double sl = 0.0, tp = 0.0;
    CalculateSLTP(true, i, lastBuyPivotPrice, sl, tp);
    
-   // ✅ PROTEÇÃO: Verificar antes de escrever no buffer
    if(i >= 0 && i < ArraySize(BuySignalBuf))
       BuySignalBuf[i] = entry;
    
-   // ═══════════════════════════════════════════════════════════
-   // 🔄 REVERSE CLOSE LOGIC
-   // ═══════════════════════════════════════════════════════════
-   
+   // Reverse Close Logic
    if(UseReverseClose && activeTrade.hasPosition)
    {
       if(activeTrade.isBuy)
       {
-         // Já é COMPRA, ignora novo sinal de COMPRA
-         Print("⚠️ Sinal de COMPRA ignorado: já existe COMPRA aberta");
+         if(!isScanningHistory)
+            Print("⚠️ Sinal COMPRA ignorado: já existe COMPRA aberta");
          lastBuyPivotBar = -1;
          return;
       }
       else
       {
-         // É VENDA, REVERTER para COMPRA
-         Print("🔄 REVERSE: Detectado sinal de COMPRA, fechando VENDA atual...");
+         if(!isScanningHistory)
+            Print("🔄 REVERSE: Fechando VENDA para abrir COMPRA");
          CloseCurrentTrade(i, "Reverse to BUY");
-         // Continua para abrir a COMPRA
       }
    }
    else if(!UseReverseClose && activeTrade.hasPosition)
    {
-      // Modo normal: ignora se já tem posição
-      Print("⚠️ Sinal ignorado: já existe posição aberta (Reverse Close desativado)");
+      if(!isScanningHistory)
+         Print("⚠️ Sinal ignorado: posição já aberta");
       lastBuyPivotBar = -1;
       return;
    }
    
-   // ═══ SEMPRE REGISTRAR TRADE (durante varredura E ao vivo) ═══
+   // Registrar trade
    if(EnableBacktest)
    {
       int tradeIdx = totalTrades;
       ArrayResize(trades, totalTrades + 1);
       
-      // ✅ PROTEÇÃO: Verificar acesso ao array Time
       datetime tradeTime = (i >= 0 && i < ArraySize(Time)) ? Time[i] : TimeCurrent();
       
       trades[tradeIdx].openTime = tradeTime;
@@ -839,7 +842,14 @@ void GenerateBuySignal(int i)
       
       totalTrades++;
       
-      // Atualizar controle de trade ativo
+      // ✅✅✅ NOVO: Desenhar seta com tooltip ✅✅✅
+      if(ShowEntryArrows)
+      {
+         double arrowPrice = Low[i] - (15 * Point);
+         DrawEntryArrowWithTooltip(tradeIdx, tradeTime, arrowPrice, true, entry, sl, tp);
+      }
+      
+      // Atualizar controle
       activeTrade.hasPosition = true;
       activeTrade.isBuy = true;
       activeTrade.openTime = tradeTime;
@@ -848,14 +858,13 @@ void GenerateBuySignal(int i)
       activeTrade.tpPrice = tp;
       activeTrade.tradeIndex = tradeIdx;
       
-      // ═══ DESENHAR LINHAS HLINE APENAS AO VIVO (não durante varredura) ═══
+      // Desenhar linhas apenas ao vivo
       if(ShowSLTPLines && !isScanningHistory)
       {
          string entryName = "MPP_ENTRY_BUY_" + TimeToString(tradeTime, TIME_DATE|TIME_SECONDS);
          string slName = "MPP_SL_BUY_" + TimeToString(tradeTime, TIME_DATE|TIME_SECONDS);
          string tpName = "MPP_TP_BUY_" + TimeToString(tradeTime, TIME_DATE|TIME_SECONDS);
          
-         // Criar linhas horizontais
          if(ObjectCreate(0, entryName, OBJ_HLINE, 0, 0, entry))
          {
             ObjectSetInteger(0, entryName, OBJPROP_COLOR, clrGold);
@@ -888,12 +897,13 @@ void GenerateBuySignal(int i)
          trades[tradeIdx].tpLineName = tpName;
          trades[tradeIdx].linesDrawn = true;
          
-         // Registrar linhas para limpeza futura
          RegisterTradeLines(tradeIdx, entryName, slName, tpName);
       }
       
-      Print("✅ TRADE COMPRA REGISTRADO: Entry=", entry, " SL=", sl, " TP=", tp, 
-            " | Scanning=", (isScanningHistory ? "SIM" : "NÃO"));
+      // ✅ Log apenas em modo debug ou ao vivo
+      if((EnableDebugLogs || !isScanningHistory) && !isScanningHistory)
+         Print("✅ COMPRA registrada: ", DoubleToString(entry, Digits), 
+               " | SL: ", DoubleToString(sl, Digits), " | TP: ", DoubleToString(tp, Digits));
    }
    
    // Alerta apenas ao vivo
@@ -908,14 +918,14 @@ void GenerateBuySignal(int i)
 }
 
 //+------------------------------------------------------------------+
-//| Gerar Sinal de Venda (COM REVERSE CLOSE)                         |
+//| Gerar Sinal de Venda (COM TOOLTIP)                               |
 //+------------------------------------------------------------------+
 void GenerateSellSignal(int i)
 {
-   // ✅ PROTEÇÃO: Verificar índice válido
    if(i < 0 || i >= ArraySize(Close))
    {
-      Print("⚠️ GenerateSellSignal: Índice inválido i=", i);
+      if(EnableDebugLogs)
+         Print("⚠️ GenerateSellSignal: Índice inválido i=", i);
       return;
    }
    
@@ -926,46 +936,40 @@ void GenerateSellSignal(int i)
    double sl = 0.0, tp = 0.0;
    CalculateSLTP(false, i, lastSellPivotPrice, sl, tp);
    
-   // ✅ PROTEÇÃO: Verificar antes de escrever no buffer
    if(i >= 0 && i < ArraySize(SellSignalBuf))
       SellSignalBuf[i] = entry;
    
-   // ═══════════════════════════════════════════════════════════
-   // 🔄 REVERSE CLOSE LOGIC
-   // ═══════════════════════════════════════════════════════════
-   
+   // Reverse Close Logic
    if(UseReverseClose && activeTrade.hasPosition)
    {
       if(!activeTrade.isBuy)
       {
-         // Já é VENDA, ignora novo sinal de VENDA
-         Print("⚠️ Sinal de VENDA ignorado: já existe VENDA aberta");
+         if(!isScanningHistory)
+            Print("⚠️ Sinal VENDA ignorado: já existe VENDA aberta");
          lastSellPivotBar = -1;
          return;
       }
       else
       {
-         // É COMPRA, REVERTER para VENDA
-         Print("🔄 REVERSE: Detectado sinal de VENDA, fechando COMPRA atual...");
+         if(!isScanningHistory)
+            Print("🔄 REVERSE: Fechando COMPRA para abrir VENDA");
          CloseCurrentTrade(i, "Reverse to SELL");
-         // Continua para abrir a VENDA
       }
    }
    else if(!UseReverseClose && activeTrade.hasPosition)
    {
-      // Modo normal: ignora se já tem posição
-      Print("⚠️ Sinal ignorado: já existe posição aberta (Reverse Close desativado)");
+      if(!isScanningHistory)
+         Print("⚠️ Sinal ignorado: posição já aberta");
       lastSellPivotBar = -1;
       return;
    }
    
-   // ═══ SEMPRE REGISTRAR TRADE (durante varredura E ao vivo) ═══
+   // Registrar trade
    if(EnableBacktest)
    {
       int tradeIdx = totalTrades;
       ArrayResize(trades, totalTrades + 1);
       
-      // ✅ PROTEÇÃO: Verificar acesso ao array Time
       datetime tradeTime = (i >= 0 && i < ArraySize(Time)) ? Time[i] : TimeCurrent();
       
       trades[tradeIdx].openTime = tradeTime;
@@ -980,7 +984,14 @@ void GenerateSellSignal(int i)
       
       totalTrades++;
       
-      // Atualizar controle de trade ativo
+      // ✅✅✅ NOVO: Desenhar seta com tooltip ✅✅✅
+      if(ShowEntryArrows)
+      {
+         double arrowPrice = High[i] + (15 * Point);
+         DrawEntryArrowWithTooltip(tradeIdx, tradeTime, arrowPrice, false, entry, sl, tp);
+      }
+      
+      // Atualizar controle
       activeTrade.hasPosition = true;
       activeTrade.isBuy = false;
       activeTrade.openTime = tradeTime;
@@ -989,14 +1000,13 @@ void GenerateSellSignal(int i)
       activeTrade.tpPrice = tp;
       activeTrade.tradeIndex = tradeIdx;
       
-      // ═══ DESENHAR LINHAS HLINE APENAS AO VIVO (não durante varredura) ═══
+      // Desenhar linhas apenas ao vivo
       if(ShowSLTPLines && !isScanningHistory)
       {
          string entryName = "MPP_ENTRY_SELL_" + TimeToString(tradeTime, TIME_DATE|TIME_SECONDS);
          string slName = "MPP_SL_SELL_" + TimeToString(tradeTime, TIME_DATE|TIME_SECONDS);
          string tpName = "MPP_TP_SELL_" + TimeToString(tradeTime, TIME_DATE|TIME_SECONDS);
          
-         // Criar linhas horizontais
          if(ObjectCreate(0, entryName, OBJ_HLINE, 0, 0, entry))
          {
             ObjectSetInteger(0, entryName, OBJPROP_COLOR, clrGold);
@@ -1029,12 +1039,13 @@ void GenerateSellSignal(int i)
          trades[tradeIdx].tpLineName = tpName;
          trades[tradeIdx].linesDrawn = true;
          
-         // Registrar linhas para limpeza futura
          RegisterTradeLines(tradeIdx, entryName, slName, tpName);
       }
       
-      Print("✅ TRADE VENDA REGISTRADO: Entry=", entry, " SL=", sl, " TP=", tp,
-            " | Scanning=", (isScanningHistory ? "SIM" : "NÃO"));
+      // ✅ Log apenas em modo debug ou ao vivo
+      if((EnableDebugLogs || !isScanningHistory) && !isScanningHistory)
+         Print("✅ VENDA registrada: ", DoubleToString(entry, Digits),
+               " | SL: ", DoubleToString(sl, Digits), " | TP: ", DoubleToString(tp, Digits));
    }
    
    // Alerta apenas ao vivo
@@ -1048,10 +1059,56 @@ void GenerateSellSignal(int i)
    lastSellPivotBar = -1;
 }
 
+
+//+------------------------------------------------------------------+
+//| Redesenhar Setas de Entrada com Tooltip                          |
+//+------------------------------------------------------------------+
+void RedrawAllEntryArrows()
+{
+   if(!ShowEntryArrows)
+      return;
+   
+   int drawn = 0;
+   
+   for(int i = 0; i < totalTrades; i++)
+   {
+      // Verificar se já existe a seta
+      string arrowName = prefix + "ENTRY_ARROW_" + IntegerToString(i) + "_" + TimeToString(trades[i].openTime, TIME_SECONDS);
+      
+      if(ObjectFind(0, arrowName) >= 0)
+         continue;  // Já existe, pular
+      
+      // Desenhar seta com tooltip
+      double arrowPrice;
+      if(trades[i].isBuy)
+         arrowPrice = trades[i].entryPrice - (15 * Point);  // Aproximação
+      else
+         arrowPrice = trades[i].entryPrice + (15 * Point);
+      
+      DrawEntryArrowWithTooltip(
+         i, 
+         trades[i].openTime, 
+         arrowPrice, 
+         trades[i].isBuy, 
+         trades[i].entryPrice, 
+         trades[i].slPrice, 
+         trades[i].tpPrice
+      );
+      
+      drawn++;
+   }
+   
+   if(drawn > 0)
+      Print("✅ ", drawn, " setas de entrada redesenhadas com tooltip");
+}
+
+
+
+
 // Bloco 4
 
 //+------------------------------------------------------------------+
-//| Custom indicator iteration function (COM REVERSE CLOSE)          |
+//| Custom indicator iteration function (OTIMIZADO)                  |
 //+------------------------------------------------------------------+
 int OnCalculate(const int rates_total,
                 const int prev_calculated,
@@ -1064,21 +1121,18 @@ int OnCalculate(const int rates_total,
                 const long &volume[],
                 const int &spread[])
 {
-   // ═══ PROTEÇÃO: Verificar dados suficientes ═══
+   // Proteção: Verificar dados suficientes
    int minBars = TrendEMAPeriod + 50;
    if(rates_total < minBars)
    {
-      Comment("⏳ Aguardando dados históricos... ", rates_total, "/", minBars, " barras");
+      Comment("⏳ Aguardando dados... ", rates_total, "/", minBars);
       return(0);
    }
    
    if(ArraySize(BuyPivotBuf) < rates_total)
-   {
-      Print("⚠️ Buffer menor que rates_total! Aguardando...");
       return(0);
-   }
    
-   // ═══ DETECÇÃO DE NOVA BARRA ═══
+   // Detecção de nova barra
    datetime currentBarTime = Time[0];
    isNewBar = false;
    
@@ -1088,25 +1142,25 @@ int OnCalculate(const int rates_total,
       lastProcessedBarTime = currentBarTime;
    }
    
-   // ═══ DETECTAR FIM DA VARREDURA INICIAL ═══
+   // Detectar fim da varredura inicial
    if(isScanningHistory)
    {
       if(initialBars == 0)
          initialBars = rates_total;
          
-      // Varredura terminou quando prev_calculated == rates_total
       if(prev_calculated > 0 && prev_calculated == rates_total)
       {
          isScanningHistory = false;
-         Print("✅ Varredura histórica concluída. Sistema ativo para trading ao vivo.");
+         Print("✅ Varredura concluída. Sistema ativo para trading ao vivo.");
+         Print("📊 Total de trades: ", totalTrades, " | Wins: ", totalWins, " | Losses: ", totalLosses);
          DrawAllClosedTradeResults();
       }
    }
    
-   // ═══ LIMPAR LINHAS DE TRADES ENCERRADOS ═══
+   // Limpar linhas de trades encerrados
    CleanupClosedTradeLines();
    
-   // ═══ VERIFICAR SE PRECISA RESETAR ═══
+   // Verificar reset
    if(needsReset)
    {
       ResetFinancialMetrics();
@@ -1121,7 +1175,7 @@ int OnCalculate(const int rates_total,
    ArraySetAsSeries(low, true);
    ArraySetAsSeries(close, true);
    
-   // ═══ CALCULAR BARRAS A VARRER ═══
+   // Calcular barras a varrer
    totalBarsAvailable = iBars(Symbol(), Period());
    
    if(ScanPercentage == 0)
@@ -1133,18 +1187,16 @@ int OnCalculate(const int rates_total,
    if(prev_calculated > 0)
       limit = MathMin(3, barsToScan);
    
-   // ✅✅ PROTEÇÃO CRÍTICA: Evitar array out of range ✅✅
+   // Proteção: Evitar array out of range
    if(limit >= rates_total)
       limit = rates_total - 1;
    
-   // ✅ Garantir que não acesse índices negativos
    if(limit < 0)
       limit = 0;
    
-   // ═══ RASTREAMENTO DO PERÍODO DE VARREDURA ═══
+   // Rastreamento do período de varredura
    if(rates_total > 0)
    {
-      // ✅ PROTEÇÃO: Verificar antes de acessar Time[rates_total - 1]
       int lastIndex = rates_total - 1;
       if(lastIndex >= 0 && lastIndex < ArraySize(Time))
       {
@@ -1152,7 +1204,6 @@ int OnCalculate(const int rates_total,
             firstBarProcessed = Time[lastIndex];
       }
       
-      // ✅ PROTEÇÃO: Verificar antes de acessar Time[0]
       if(ArraySize(Time) > 0 && Time[0] > lastBarProcessed)
          lastBarProcessed = Time[0];
       
@@ -1160,14 +1211,13 @@ int OnCalculate(const int rates_total,
          totalDaysCovered = (int)((lastBarProcessed - firstBarProcessed) / 86400);
    }
    
-   // ═══ LOOP PRINCIPAL COM PROTEÇÃO TOTAL ═══
+   // Loop principal com proteção total
    for(int i = limit; i >= 0; i--)
    {
-      // ✅✅ PROTEÇÃO ADICIONAL: Verificar se i está dentro dos limites ✅✅
+      // Proteção: Verificar limites
       if(i < 0 || i >= rates_total)
          continue;
       
-      // ✅ PROTEÇÃO: Verificar tamanho dos buffers antes de escrever
       if(i >= ArraySize(BuyPivotBuf))
          continue;
       
@@ -1179,10 +1229,9 @@ int OnCalculate(const int rates_total,
       BuySignalBuf[i] = EMPTY_VALUE;
       SellSignalBuf[i] = EMPTY_VALUE;
       
-      // ═══ DETECTAR PIVÔS ═══
+      // Detectar pivôs
       if(IsPivotHigh(i))
       {
-         // ✅ PROTEÇÃO: Verificar antes de acessar High[i]
          if(i >= 0 && i < ArraySize(High))
          {
             SellPivotBuf[i] = High[i];
@@ -1193,7 +1242,6 @@ int OnCalculate(const int rates_total,
       
       if(IsPivotLow(i))
       {
-         // ✅ PROTEÇÃO: Verificar antes de acessar Low[i]
          if(i >= 0 && i < ArraySize(Low))
          {
             BuyPivotBuf[i] = Low[i];
@@ -1202,7 +1250,7 @@ int OnCalculate(const int rates_total,
          }
       }
       
-      // ═══ VERIFICAR CONFIRMAÇÃO DE COMPRA ═══
+      // Verificar confirmação de compra
       if(lastBuyPivotBar >= 0 && i < lastBuyPivotBar - ConfirmCandles && lastBuyPivotBar < rates_total)
       {
          bool confirmed = true;
@@ -1211,7 +1259,6 @@ int OnCalculate(const int rates_total,
          {
             int checkBar = lastBuyPivotBar - j;
             
-            // ✅ PROTEÇÃO: Verificar limites do array antes de acessar
             if(checkBar < 0 || checkBar >= rates_total || checkBar >= ArraySize(Close))
             {
                confirmed = false;
@@ -1227,20 +1274,17 @@ int OnCalculate(const int rates_total,
          
          if(confirmed)
          {
-            // ✅ PROTEÇÃO: Verificar antes de escrever no buffer
-            if(i >= 0 && i < ArraySize(BuyConfirmBuf) && i < ArraySize(Low))
-               BuyConfirmBuf[i] = Low[i] - 15 * Point;
             
-            // ✅✅ GERAR SINAL: VARREDURA OU NOVA BARRA AO VIVO ✅✅
+            
             if(isScanningHistory || (i == 0 && isNewBar))
             {
                GenerateBuySignal(i);
-               lastBuyPivotBar = -1; // ✅ Resetar após gerar sinal
+               lastBuyPivotBar = -1;
             }
          }
       }
       
-      // ═══ VERIFICAR CONFIRMAÇÃO DE VENDA ═══
+      // Verificar confirmação de venda
       if(lastSellPivotBar >= 0 && i < lastSellPivotBar - ConfirmCandles && lastSellPivotBar < rates_total)
       {
          bool confirmed = true;
@@ -1249,7 +1293,6 @@ int OnCalculate(const int rates_total,
          {
             int checkBar = lastSellPivotBar - j;
             
-            // ✅ PROTEÇÃO: Verificar limites do array antes de acessar
             if(checkBar < 0 || checkBar >= rates_total || checkBar >= ArraySize(Close))
             {
                confirmed = false;
@@ -1265,54 +1308,51 @@ int OnCalculate(const int rates_total,
          
          if(confirmed)
          {
-            // ✅ PROTEÇÃO: Verificar antes de escrever no buffer
-            if(i >= 0 && i < ArraySize(SellConfirmBuf) && i < ArraySize(High))
-               SellConfirmBuf[i] = High[i] + 15 * Point;
             
-            // ✅✅ GERAR SINAL: VARREDURA OU NOVA BARRA AO VIVO ✅✅
+            
             if(isScanningHistory || (i == 0 && isNewBar))
             {
                GenerateSellSignal(i);
-               lastSellPivotBar = -1; // ✅ Resetar após gerar sinal
+               lastSellPivotBar = -1;
             }
          }
       }
       
-      // ═══════════════════════════════════════════════════════════
-      // ✅✅ NOVO: VERIFICAR TRADES DURANTE VARREDURA ✅✅
-      // ═══════════════════════════════════════════════════════════
+      // Verificar trades durante varredura
       if(isScanningHistory && EnableBacktest)
       {
          CheckTradeResultsDuringHistory(i);
       }
    }
    
-   // ═══ PROCESSAR TRADES ABERTOS (APENAS AO VIVO) ═══
+   // Processar trades abertos (apenas ao vivo)
    if(!isScanningHistory)
    {
       CheckTradeResults();
    }
    
-   // ═══════════════════════════════════════════════════════════════
-   // ✅ DESENHAR RESULTADOS DE TRADES FECHADOS (UMA VEZ APENAS)
-   // ═══════════════════════════════════════════════════════════════
+   // ✅ Desenhar resultados APENAS uma vez por trade
    if(ShowSLTPLines)
    {
+      int drawn = 0;
+      
       for(int i = 0; i < totalTrades; i++)
       {
-         // Apenas trades fechados que ainda não foram desenhados
          if(trades[i].status != 0 && !trades[i].resultDrawn)
          {
             DrawTradeResult(i);
             trades[i].resultDrawn = true;
-            Print("🎨 Resultado desenhado para trade #", i, " | Status: ", 
-                  trades[i].status == 1 ? "WIN" : "LOSS");
+            drawn++;
          }
       }
+      
+      // ✅ Log único ao final
+      if(drawn > 0 && EnableDebugLogs && !isScanningHistory)
+         Print("🎨 ", drawn, " resultados desenhados");
    }
    
-   // ═══ ATUALIZAR PAINEL ═══
-   if(TimeCurrent() - lastPanelUpdate >= 1)
+   // Atualizar painel
+   if(ShowInfoPanel && TimeCurrent() - lastPanelUpdate >= 1)
    {
       UpdateInfoPanel();
       lastPanelUpdate = TimeCurrent();
@@ -1322,33 +1362,26 @@ int OnCalculate(const int rates_total,
 }
 
 //+------------------------------------------------------------------+
-//| Verificar Trades Durante Varredura Histórica (CORRIGIDO)         |
+//| Verificar Trades Durante Varredura Histórica (OTIMIZADO)         |
 //+------------------------------------------------------------------+
 void CheckTradeResultsDuringHistory(int currentBar)
 {
-   if(!EnableBacktest)
+   if(!EnableBacktest || totalTrades == 0)
       return;
    
-   if(totalTrades == 0)
-      return;
+   // ✅ Contador para resumo
+   static int closedCount = 0;
+   static int lastReportedCount = 0;
    
-   // ✅ Verificar TODOS os trades abertos (não só o ativo)
    for(int i = 0; i < totalTrades; i++)
    {
-      // Apenas trades abertos
       if(trades[i].status != 0)
          continue;
       
-      // ✅ NÃO VERIFICAR TRADE NA BARRA DE CRIAÇÃO
       int entryBar = iBarShift(NULL, 0, trades[i].openTime);
-      if(entryBar < 0)
+      if(entryBar < 0 || currentBar >= entryBar)
          continue;
       
-      // ✅ CRÍTICO: Trade só pode ser fechado DEPOIS da barra de entrada
-      if(currentBar >= entryBar)
-         continue; // Ainda não passou da barra de entrada
-      
-      // Verificar se atingiu TP ou SL nesta barra
       bool hitTP = false;
       bool hitSL = false;
       
@@ -1369,7 +1402,6 @@ void CheckTradeResultsDuringHistory(int currentBar)
       
       if(hitTP || hitSL)
       {
-         // ✅ Fechar o trade
          trades[i].closeTime = Time[currentBar];
          trades[i].exitPrice = hitTP ? trades[i].tpPrice : trades[i].slPrice;
          
@@ -1377,14 +1409,14 @@ void CheckTradeResultsDuringHistory(int currentBar)
          
          if(hitTP)
          {
-            trades[i].status = 1; // Win
+            trades[i].status = 1;
             profit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
             totalWins++;
             totalProfitUSD += profit;
          }
          else
          {
-            trades[i].status = 2; // Loss
+            trades[i].status = 2;
             profit = -(InitialBalance * RiskPerTrade / 100);
             totalLosses++;
             totalLossUSD += MathAbs(profit);
@@ -1400,54 +1432,62 @@ void CheckTradeResultsDuringHistory(int currentBar)
          if(dd > maxDrawdown)
             maxDrawdown = dd;
          
-         // ✅ Se este é o trade ativo, limpar controle
+         // Se este é o trade ativo, limpar controle
          if(UseReverseClose && activeTrade.hasPosition && activeTrade.tradeIndex == i)
          {
             activeTrade.hasPosition = false;
             activeTrade.tradeIndex = -1;
          }
          
-         Print("✅ HISTÓRICO: Trade #", i, " | ", (trades[i].isBuy ? "BUY" : "SELL"));
-         Print("   Entry Bar: ", entryBar, " (", TimeToString(trades[i].openTime, TIME_DATE|TIME_MINUTES), ") | Price: ", DoubleToString(trades[i].entryPrice, Digits));
-         Print("   Exit Bar:  ", currentBar, " (", TimeToString(Time[currentBar], TIME_DATE|TIME_MINUTES), ") | Price: ", DoubleToString(trades[i].exitPrice, Digits));
-         Print("   Result: ", (hitTP ? "TP WIN" : "SL LOSS"), " | Profit: $", DoubleToString(profit, 2));
-         Print("   SL: ", DoubleToString(trades[i].slPrice, Digits), " | TP: ", DoubleToString(trades[i].tpPrice, Digits));
+         closedCount++;
+         
+         // ✅ Log resumido apenas a cada 10 trades ou em modo debug
+         if(EnableDebugLogs || (closedCount % 10 == 0 && closedCount > lastReportedCount))
+         {
+            Print("📊 Histórico: ", closedCount, " trades processados | Wins: ", totalWins, " | Losses: ", totalLosses);
+            lastReportedCount = closedCount;
+         }
+         
+         // ✅ Log detalhado APENAS em modo debug E para primeiros/últimos 3 trades
+         if(EnableDebugLogs && (i < 3 || i >= totalTrades - 3))
+         {
+            Print("   Trade #", i, " | ", (trades[i].isBuy ? "BUY" : "SELL"), 
+                  " | ", (hitTP ? "TP" : "SL"), 
+                  " | Entry: ", TimeToString(trades[i].openTime, TIME_DATE|TIME_MINUTES),
+                  " | Exit: ", TimeToString(Time[currentBar], TIME_DATE|TIME_MINUTES),
+                  " | $", DoubleToString(profit, 2));
+         }
       }
    }
 }
 
 //+------------------------------------------------------------------+
-//| Verificar Resultados dos Trades (MODO AO VIVO)                   |
+//| Verificar Resultados dos Trades (MODO AO VIVO - OTIMIZADO)       |
 //+------------------------------------------------------------------+
 void CheckTradeResults()
 {
    if(!EnableBacktest)
       return;
    
-   // ═══════════════════════════════════════════════════════════
-   // 🔄 MODO REVERSE CLOSE: Verifica apenas o trade ativo
-   // ═══════════════════════════════════════════════════════════
-   
+   // Modo Reverse Close: verifica apenas o trade ativo
    if(UseReverseClose && activeTrade.hasPosition)
    {
       int idx = activeTrade.tradeIndex;
       
-      // Verificar se índice válido
       if(idx < 0 || idx >= totalTrades)
       {
-         Print("⚠️ CheckTradeResults: Índice de trade inválido");
+         if(EnableDebugLogs)
+            Print("⚠️ CheckTradeResults: Índice inválido");
          activeTrade.hasPosition = false;
          return;
       }
       
-      // Verificar se trade ainda está aberto
       if(trades[idx].status != 0)
       {
          activeTrade.hasPosition = false;
          return;
       }
       
-      // Verificar SL/TP apenas na barra atual (mais eficiente)
       bool hitTP = false, hitSL = false;
       
       if(activeTrade.isBuy)
@@ -1471,13 +1511,10 @@ void CheckTradeResults()
          CloseCurrentTrade(0, reason);
       }
       
-      return; // ✅ MANTÉM O RETURN AQUI PARA MODO REVERSE
+      return;
    }
    
-   // ═══════════════════════════════════════════════════════════
-   // MODO NORMAL: Verifica todos os trades abertos
-   // ═══════════════════════════════════════════════════════════
-   
+   // Modo Normal: verifica todos os trades abertos
    if(totalTrades == 0)
       return;
    
@@ -1494,7 +1531,6 @@ void CheckTradeResults()
       datetime closeTime = 0;
       int closeBar = 0;
       
-      // Procurar da entrada até agora
       for(int j = entryBar - 1; j >= 0; j--)
       {
          if(trades[i].isBuy)
@@ -1571,42 +1607,27 @@ void CheckTradeResults()
          if(ShowSLTPLines)
             DrawTradeResult(i);
          
-         Print("✅ AO VIVO: Trade #", i, " fechado | ", 
-               (hitTP ? "TP WIN" : "SL LOSS"), " $", DoubleToString(profit, 2));
+         // ✅ Log limpo
+         Print("💼 Trade #", i, " fechado | ", (hitTP ? "TP WIN" : "SL LOSS"), " | $", DoubleToString(profit, 2));
       }
    }
 }
-
 // Bloco 5
 
 //+------------------------------------------------------------------+
-//| Detectar Pivôs de Alta e Baixa (SIMPLIFICADO)                   |
-//+------------------------------------------------------------------+
-void DetectPivots(int bar)
-{
-   // Esta função agora é apenas um wrapper
-   // A lógica real está em IsPivotHigh e IsPivotLow
-   // que são chamadas diretamente no OnCalculate
-   
-   // Manter DrawStar se necessário
-   if(BuyPivotBuf[bar] != EMPTY_VALUE && BuyPivotBuf[bar] != 0.0)
-   {
-      DrawStar(true, bar, BuyPivotBuf[bar]);
-   }
-   
-   if(SellPivotBuf[bar] != EMPTY_VALUE && SellPivotBuf[bar] != 0.0)
-   {
-      DrawStar(false, bar, SellPivotBuf[bar]);
-   }
-}
-
-//+------------------------------------------------------------------+
-//| Desenhar Estrela no Pivô (AZUL para topo / VERMELHA para fundo) |
+//| Desenhar Estrela no Pivô (OTIMIZADO)                             |
 //+------------------------------------------------------------------+
 void DrawStar(bool isBuyPivot, int bar, double price)
 {
+   // Validações silenciosas
+   if(bar < 0 || bar >= Bars)
+      return;
+   
+   if(price <= 0)
+      return;
+   
    // Nome único do objeto
-   string objName = "MPP_STAR_" + (isBuyPivot ? "BUY_" : "SELL_") + TimeToString(Time[bar]);
+   string objName = prefix + "STAR_" + (isBuyPivot ? "BUY_" : "SELL_") + TimeToString(Time[bar], TIME_SECONDS);
    
    // Deletar objeto se já existir
    if(ObjectFind(0, objName) >= 0)
@@ -1615,115 +1636,88 @@ void DrawStar(bool isBuyPivot, int bar, double price)
    // Criar ESTRELA (código 119 = wingdings estrela ★)
    if(!ObjectCreate(0, objName, OBJ_ARROW, 0, Time[bar], price))
    {
-      Print("❌ Erro ao criar estrela: ", objName, " - ", GetLastError());
+      // ✅ Log apenas em modo debug
+      if(EnableDebugLogs)
+         Print("⚠️ Erro ao criar estrela: ", GetLastError());
       return;
    }
    
    // Configurar ESTRELA
-   ObjectSetInteger(0, objName, OBJPROP_ARROWCODE, 119);  // ★ Estrela preenchida
+   ObjectSetInteger(0, objName, OBJPROP_ARROWCODE, 119);
    
    // COR: VERMELHA para COMPRA (fundo) / AZUL para VENDA (topo)
    if(isBuyPivot)
-      ObjectSetInteger(0, objName, OBJPROP_COLOR, clrRed);      // 🔴 Fundo = VERMELHO
+      ObjectSetInteger(0, objName, OBJPROP_COLOR, clrRed);
    else
-      ObjectSetInteger(0, objName, OBJPROP_COLOR, clrDodgerBlue); // 🔵 Topo = AZUL
+      ObjectSetInteger(0, objName, OBJPROP_COLOR, clrDodgerBlue);
    
-   // Tamanho MAIOR (3 = grande)
    ObjectSetInteger(0, objName, OBJPROP_WIDTH, 3);
    
    // Posicionar corretamente
    if(isBuyPivot)
-      ObjectSetInteger(0, objName, OBJPROP_ANCHOR, ANCHOR_TOP);    // Abaixo do preço
+      ObjectSetInteger(0, objName, OBJPROP_ANCHOR, ANCHOR_TOP);
    else
-      ObjectSetInteger(0, objName, OBJPROP_ANCHOR, ANCHOR_BOTTOM); // Acima do preço
+      ObjectSetInteger(0, objName, OBJPROP_ANCHOR, ANCHOR_BOTTOM);
    
-   // Não selecionar automaticamente
    ObjectSetInteger(0, objName, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, objName, OBJPROP_SELECTED, false);
-   
-   // Aplicar ao fundo (não sobrepor velas)
    ObjectSetInteger(0, objName, OBJPROP_BACK, false);
 }
 
+// Bloco 6
 
-//Bloco 6
+// Empty
 
-//+------------------------------------------------------------------+
-//| Validar Confirmação de Compra                                    |
-//+------------------------------------------------------------------+
-bool ValidateBuyConfirmation(int confirmBar, int pivotBar, double pivotPrice)
-{
-   double atr = iATR(NULL, 0, ATRPeriod, pivotBar);
-   double minMove = atr * 0.8;
-   
-   double moveAway = Close[confirmBar] - pivotPrice;
-   if(moveAway < minMove) return false;
-   
-   if(RequireCloseBreak && Close[confirmBar] <= High[pivotBar])
-      return false;
-   
-   if(Close[confirmBar] <= Open[confirmBar])
-      return false;
-   
-   if(Low[confirmBar] < pivotPrice)
-      return false;
-   
-   return true;
-}
+//Bloco 7 (OTIMIZADO)
 
 //+------------------------------------------------------------------+
-//| Validar Confirmação de Venda                                     |
-//+------------------------------------------------------------------+
-bool ValidateSellConfirmation(int confirmBar, int pivotBar, double pivotPrice)
-{
-   double atr = iATR(NULL, 0, ATRPeriod, pivotBar);
-   double minMove = atr * 0.8;
-   
-   double moveAway = pivotPrice - Close[confirmBar];
-   if(moveAway < minMove) return false;
-   
-   if(RequireCloseBreak && Close[confirmBar] >= Low[pivotBar])
-      return false;
-   
-   if(Close[confirmBar] >= Open[confirmBar])
-      return false;
-   
-   if(High[confirmBar] > pivotPrice)
-      return false;
-   
-   return true;
-}
-
-
-//Bloco 7
-
-
-
-
-//+------------------------------------------------------------------+
-//| Enviar Alerta de Trade                                           |
+//| Enviar Alerta de Trade (OTIMIZADO)                               |
 //+------------------------------------------------------------------+
 void SendTradeAlert(bool isBuy, double entry, double sl, double tp)
 {
-   string message = StringFormat("%s SINAL: %s | Entry: %s | SL: %s | TP: %s",
+   // Validações
+   if(!EnableAlerts)
+      return;
+   
+   if(isScanningHistory)
+      return;
+   
+   // Criar mensagem
+   string message = StringFormat("%s %s | Entry: %s | SL: %s | TP: %s",
                                  Symbol(),
-                                 isBuy ? "COMPRA" : "VENDA",
+                                 isBuy ? "🟢 COMPRA" : "🔴 VENDA",
                                  DoubleToString(entry, Digits),
                                  DoubleToString(sl, Digits),
                                  DoubleToString(tp, Digits));
    
-   if(lastAlertMessage != message || TimeCurrent() - lastAlertTime > 60)
+   // Prevenir alertas duplicados
+   if(lastAlertMessage == message && TimeCurrent() - lastAlertTime <= 60)
    {
-      Alert(message);
-      
-      if(EnablePushNotifications)
-         SendNotification(message);
-      
-      lastAlertMessage = message;
-      lastAlertTime = TimeCurrent();
+      if(EnableDebugLogs)
+         Print("⚠️ Alerta duplicado bloqueado");
+      return;
    }
+   
+   // Enviar alerta
+   Alert(message);
+   
+   // Enviar notificação push
+   if(EnablePushNotifications)
+   {
+      if(!SendNotification(message))
+      {
+         if(EnableDebugLogs)
+            Print("⚠️ Falha ao enviar notificação push: ", GetLastError());
+      }
+   }
+   
+   // Atualizar controle
+   lastAlertMessage = message;
+   lastAlertTime = TimeCurrent();
+   
+   if(EnableDebugLogs)
+      Print("✅ Alerta enviado: ", message);
 }
-
 
 // Bloco 8
 
