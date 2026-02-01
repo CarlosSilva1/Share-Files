@@ -15,7 +15,7 @@
 //| INPUTS - CONFIGURAÇÕES                                           |
 //+------------------------------------------------------------------+
 // === Pivôs ===
-input int PivotStrength = 5;                // Força do Pivô (barras)
+input int PivotStrength = 20;                // Força do Pivô (barras)
 input double ATRMultiplier = 1.5;           // Multiplicador ATR
 input int ConfirmCandles = 2;               // Candles de confirmação
 input int MaxConfirmCandles = 3;            // Máximo de barras p/ confirmar
@@ -58,7 +58,7 @@ input int MinStopLossPoints = 200;          // SL Mínimo (pontos)
 input int MaxStopLossPoints = 1000;         // SL Máximo (pontos)
 
 // ✅ ADICIONE ESTA LINHA NOVA:
-input bool UsePivotBasedSL = true;          // 🎯 SL baseado no Pivô (false = baseado na Entry)
+input bool UsePivotBasedSL = false;          // 🎯 SL baseado no Pivô (false = baseado na Entry)
 
 // === Visual ===
 input bool ShowInfoPanel = true;            // Mostrar Painel
