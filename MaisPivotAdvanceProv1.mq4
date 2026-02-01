@@ -1728,7 +1728,94 @@ void SendTradeAlert(bool isBuy, double entry, double sl, double tp)
 // Bloco 8
 
 //+------------------------------------------------------------------+
-//| Calcular SL e TP COM AUDITORIA COMPLETA EM PONTOS                |
+//| Obter unidade de ponto UNIVERSAL (funciona para QUALQUER ativo)  |
+//+------------------------------------------------------------------+
+double GetDisplayPoint()
+{
+   string symbol = Symbol();
+   int digits = Digits;
+   
+   // ══════════════════════════════════════════════════════════════
+   // 1️⃣ METAIS PRECIOSOS (Gold, Silver, etc)
+   // ══════════════════════════════════════════════════════════════
+   if(StringFind(symbol, "XAU") >= 0 || StringFind(symbol, "GOLD") >= 0)
+      return 1.0;  // GOLD: 1 ponto = $1.00
+   
+   if(StringFind(symbol, "XAG") >= 0 || StringFind(symbol, "SILVER") >= 0)
+      return 1.0;  // SILVER: 1 ponto = $1.00
+   
+   // ══════════════════════════════════════════════════════════════
+   // 2️⃣ ÍNDICES (US500, NAS100, DAX, etc)
+   // ══════════════════════════════════════════════════════════════
+   if(StringFind(symbol, "US500") >= 0 || 
+      StringFind(symbol, "SPX") >= 0 || 
+      StringFind(symbol, "S&P") >= 0)
+      return 1.0;  // S&P500: 1 ponto = 1.00
+   
+   if(StringFind(symbol, "NAS100") >= 0 || 
+      StringFind(symbol, "NDX") >= 0)
+      return 1.0;  // NASDAQ: 1 ponto = 1.00
+   
+   if(StringFind(symbol, "DAX") >= 0 || 
+      StringFind(symbol, "GER") >= 0)
+      return 1.0;  // DAX: 1 ponto = 1.00
+   
+   if(StringFind(symbol, "UK100") >= 0 || 
+      StringFind(symbol, "FTSE") >= 0)
+      return 1.0;  // FTSE: 1 ponto = 1.00
+   
+   if(StringFind(symbol, "JP225") >= 0 || 
+      StringFind(symbol, "NIKKEI") >= 0)
+      return 1.0;  // NIKKEI: 1 ponto = 1.00
+   
+   // ══════════════════════════════════════════════════════════════
+   // 3️⃣ CRIPTOMOEDAS (Bitcoin, Ethereum, etc)
+   // ══════════════════════════════════════════════════════════════
+   if(StringFind(symbol, "BTC") >= 0 || 
+      StringFind(symbol, "BITCOIN") >= 0)
+      return 1.0;  // BITCOIN: 1 ponto = $1.00
+   
+   if(StringFind(symbol, "ETH") >= 0 || 
+      StringFind(symbol, "ETHEREUM") >= 0)
+      return 1.0;  // ETHEREUM: 1 ponto = $1.00
+   
+   // ══════════════════════════════════════════════════════════════
+   // 4️⃣ PETRÓLEO E COMMODITIES
+   // ══════════════════════════════════════════════════════════════
+   if(StringFind(symbol, "OIL") >= 0 || 
+      StringFind(symbol, "WTI") >= 0 || 
+      StringFind(symbol, "BRENT") >= 0)
+      return 1.0;  // PETRÓLEO: 1 ponto = $1.00
+   
+   // ══════════════════════════════════════════════════════════════
+   // 5️⃣ FOREX (detecção automática por dígitos)
+   // ══════════════════════════════════════════════════════════════
+   if(digits == 3)
+      return 0.01;   // USDJPY (3 dígitos): 1 pip = 0.01
+   else if(digits == 4)
+      return 0.01;   // Forex 4 dígitos: 1 pip = 0.01
+   else if(digits >= 5)
+      return 0.0001; // Forex 5 dígitos: 1 pip = 0.0001
+   
+   // ══════════════════════════════════════════════════════════════
+   // 6️⃣ FALLBACK (caso genérico)
+   // ══════════════════════════════════════════════════════════════
+   if(digits <= 2)
+      return 1.0;   // Ativos com 0-2 casas: 1 ponto = 1.00
+   else
+      return 0.0001; // Outros: assume Forex
+}
+
+//+------------------------------------------------------------------+
+//| Converter distância em preço para pontos/pips reais              |
+//+------------------------------------------------------------------+
+double PriceToPoints(double priceDistance)
+{
+   return priceDistance / GetDisplayPoint();
+}
+
+//+------------------------------------------------------------------+
+//| Calcular SL e TP COM AUDITORIA AUTOMÁTICA                        |
 //+------------------------------------------------------------------+
 void CalculateSLTP(bool isBuy, int bar, double pivotPrice, double &sl, double &tp)
 {
@@ -1736,58 +1823,57 @@ void CalculateSLTP(bool isBuy, int bar, double pivotPrice, double &sl, double &t
    double atr = iATR(NULL, 0, ATRPeriod, bar);
    double slDistance = atr * StopLossATRMulti;
    
-   // 2️⃣ Aplicar limites mínimos e máximos
+   // 2️⃣ Aplicar limites
    double slDistancePoints = slDistance / Point;
    if(slDistancePoints < MinStopLossPoints)
       slDistance = MinStopLossPoints * Point;
    if(slDistancePoints > MaxStopLossPoints)
       slDistance = MaxStopLossPoints * Point;
    
-   // 3️⃣ Preço de entrada
+   // 3️⃣ Entry
    double entry = Close[bar];
    
-   // ✅ LOG DE AUDITORIA - CABEÇALHO
-   Print("════════════════════════════════════════");
-   Print("🔍 AUDITORIA CalculateSLTP");
-   Print("   Type: ", isBuy ? "BUY (Compra)" : "SELL (Venda)");
-   Print("   Bar: ", bar, " | Time: ", TimeToString(Time[bar], TIME_DATE|TIME_MINUTES));
-   Print("   Entry Price: ", DoubleToString(entry, Digits), " (fechamento da vela)");
-   Print("   Pivot Price: ", DoubleToString(pivotPrice, Digits), " (", isBuy ? "fundo" : "topo", ")");
-   Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-   Print("   📏 CÁLCULO DO SL DISTANCE:");
-   Print("      ATR(", ATRPeriod, "): ", DoubleToString(atr, Digits));
-   Print("      Multiplicador: ", StopLossATRMulti);
-   Print("      SL Distance (ATR × Multi): ", DoubleToString(slDistance, Digits));
-   Print("      SL Distance em PONTOS: ", DoubleToString(slDistance/Point, 2), " pontos");
-   Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-   Print("   ⚙️ MODO: ", UsePivotBasedSL ? "PIVOT-BASED SL" : "ENTRY-BASED SL");
+   // ✅ CONTROLE DE LOG INTELIGENTE
+   static int callCount = 0;
+   callCount++;
    
-   // 4️⃣ SWITCH: Escolher lógica baseada no input
+   bool isTargetTrade = (StringFind(TimeToString(Time[bar], TIME_DATE|TIME_MINUTES), "2026.01.26 04:00") >= 0);
+   bool shouldLogFull = (callCount <= 3 || isTargetTrade);
+   bool shouldLogSimple = (callCount > (totalTrades - 3));
+   
+   // 4️⃣ Calcular SL/TP
    if(UsePivotBasedSL)
    {
-      // OPÇÃO 2: SL baseado no PIVÔ
       if(isBuy)
       {
          sl = pivotPrice - slDistance;
          double realSLDistance = entry - sl;
          tp = entry + (realSLDistance * RiskRewardRatio);
          
-         Print("   ✅ LÓGICA PIVOT-BASED (COMPRA):");
-         Print("      1. SL = Pivot - SL_Distance");
-         Print("         SL = ", DoubleToString(pivotPrice, Digits), " - ", DoubleToString(slDistance, Digits));
-         Print("         SL = ", DoubleToString(sl, Digits));
-         Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-         Print("      2. Distância REAL (Entry → SL):");
-         Print("         Real Distance = Entry - SL");
-         Print("         Real Distance = ", DoubleToString(entry, Digits), " - ", DoubleToString(sl, Digits));
-         Print("         Real Distance = ", DoubleToString(realSLDistance, Digits));
-         Print("         Real Distance = ", DoubleToString(realSLDistance/Point, 2), " PONTOS");
-         Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-         Print("      3. TP = Entry + (Real Distance × R:R)");
-         Print("         TP = ", DoubleToString(entry, Digits), " + (", DoubleToString(realSLDistance, Digits), " × ", RiskRewardRatio, ")");
-         Print("         TP = ", DoubleToString(entry, Digits), " + ", DoubleToString(realSLDistance * RiskRewardRatio, Digits));
-         Print("         TP = ", DoubleToString(tp, Digits));
-         Print("         TP Distance = ", DoubleToString((tp - entry)/Point, 2), " PONTOS");
+         if(shouldLogFull)
+         {
+            Print("════════════════════════════════════════");
+            Print("🔍 AUDITORIA CalculateSLTP #", callCount);
+            if(isTargetTrade) Print("   🎯 TRADE TARGET DETECTADO!");
+            Print("   Type: BUY (Compra)");
+            Print("   Bar: ", bar, " | Time: ", TimeToString(Time[bar], TIME_DATE|TIME_MINUTES));
+            Print("   Entry: ", DoubleToString(entry, Digits));
+            Print("   Pivot: ", DoubleToString(pivotPrice, Digits), " (fundo)");
+            Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Print("   📏 ATR: ", DoubleToString(atr, Digits));
+            Print("   📏 SL Distance: ", DoubleToString(slDistance, Digits), " (", DoubleToString(PriceToPoints(slDistance), 2), " pontos)");
+            Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Print("   ✅ PIVOT-BASED (COMPRA):");
+            Print("      SL = Pivot - Distance");
+            Print("      SL = ", DoubleToString(pivotPrice, Digits), " - ", DoubleToString(slDistance, Digits));
+            Print("      SL = ", DoubleToString(sl, Digits));
+            Print("      Real SL Distance = ", DoubleToString(realSLDistance, Digits), " (", DoubleToString(PriceToPoints(realSLDistance), 2), " pontos)");
+            Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Print("      TP = Entry + (RealDist × R:R)");
+            Print("      TP = ", DoubleToString(entry, Digits), " + (", DoubleToString(realSLDistance, Digits), " × ", RiskRewardRatio, ")");
+            Print("      TP = ", DoubleToString(tp, Digits));
+            Print("      TP Distance = ", DoubleToString((tp-entry), Digits), " (", DoubleToString(PriceToPoints(tp-entry), 2), " pontos)");
+         }
       }
       else
       {
@@ -1795,82 +1881,100 @@ void CalculateSLTP(bool isBuy, int bar, double pivotPrice, double &sl, double &t
          double realSLDistance = sl - entry;
          tp = entry - (realSLDistance * RiskRewardRatio);
          
-         Print("   ✅ LÓGICA PIVOT-BASED (VENDA):");
-         Print("      1. SL = Pivot + SL_Distance");
-         Print("         SL = ", DoubleToString(pivotPrice, Digits), " + ", DoubleToString(slDistance, Digits));
-         Print("         SL = ", DoubleToString(sl, Digits));
-         Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-         Print("      2. Distância REAL (SL → Entry):");
-         Print("         Real Distance = SL - Entry");
-         Print("         Real Distance = ", DoubleToString(sl, Digits), " - ", DoubleToString(entry, Digits));
-         Print("         Real Distance = ", DoubleToString(realSLDistance, Digits));
-         Print("         Real Distance = ", DoubleToString(realSLDistance/Point, 2), " PONTOS");
-         Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-         Print("      3. TP = Entry - (Real Distance × R:R)");
-         Print("         TP = ", DoubleToString(entry, Digits), " - (", DoubleToString(realSLDistance, Digits), " × ", RiskRewardRatio, ")");
-         Print("         TP = ", DoubleToString(entry, Digits), " - ", DoubleToString(realSLDistance * RiskRewardRatio, Digits));
-         Print("         TP = ", DoubleToString(tp, Digits));
-         Print("         TP Distance = ", DoubleToString((entry - tp)/Point, 2), " PONTOS");
+         if(shouldLogFull)
+         {
+            Print("════════════════════════════════════════");
+            Print("🔍 AUDITORIA CalculateSLTP #", callCount);
+            if(isTargetTrade) Print("   🎯 TRADE TARGET DETECTADO!");
+            Print("   Type: SELL (Venda)");
+            Print("   Bar: ", bar, " | Time: ", TimeToString(Time[bar], TIME_DATE|TIME_MINUTES));
+            Print("   Entry: ", DoubleToString(entry, Digits));
+            Print("   Pivot: ", DoubleToString(pivotPrice, Digits), " (topo)");
+            Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Print("   📏 ATR: ", DoubleToString(atr, Digits));
+            Print("   📏 SL Distance: ", DoubleToString(slDistance, Digits), " (", DoubleToString(PriceToPoints(slDistance), 2), " pontos)");
+            Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Print("   ✅ PIVOT-BASED (VENDA):");
+            Print("      SL = Pivot + Distance");
+            Print("      SL = ", DoubleToString(pivotPrice, Digits), " + ", DoubleToString(slDistance, Digits));
+            Print("      SL = ", DoubleToString(sl, Digits));
+            Print("      Real SL Distance = ", DoubleToString(realSLDistance, Digits), " (", DoubleToString(PriceToPoints(realSLDistance), 2), " pontos)");
+            Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Print("      TP = Entry - (RealDist × R:R)");
+            Print("      TP = ", DoubleToString(entry, Digits), " - (", DoubleToString(realSLDistance, Digits), " × ", RiskRewardRatio, ")");
+            Print("      TP = ", DoubleToString(tp, Digits));
+            Print("      TP Distance = ", DoubleToString((entry-tp), Digits), " (", DoubleToString(PriceToPoints(entry-tp), 2), " pontos)");
+         }
       }
    }
    else
    {
-      // OPÇÃO 1: SL e TP baseados na ENTRADA
+      // ENTRY-BASED
       if(isBuy)
       {
          sl = entry - slDistance;
          tp = entry + (slDistance * RiskRewardRatio);
          
-         Print("   ✅ LÓGICA ENTRY-BASED (COMPRA):");
-         Print("      SL = Entry - SL_Distance");
-         Print("      SL = ", DoubleToString(entry, Digits), " - ", DoubleToString(slDistance, Digits));
-         Print("      SL = ", DoubleToString(sl, Digits), " (", DoubleToString(slDistance/Point, 2), " pontos abaixo)");
-         Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-         Print("      TP = Entry + (SL_Distance × R:R)");
-         Print("      TP = ", DoubleToString(entry, Digits), " + (", DoubleToString(slDistance, Digits), " × ", RiskRewardRatio, ")");
-         Print("      TP = ", DoubleToString(tp, Digits), " (", DoubleToString((slDistance * RiskRewardRatio)/Point, 2), " pontos acima)");
+         if(shouldLogFull)
+         {
+            Print("════════════════════════════════════════");
+            Print("🔍 AUDITORIA CalculateSLTP #", callCount);
+            Print("   Type: BUY (Compra)");
+            Print("   Entry: ", DoubleToString(entry, Digits));
+            Print("   SL = ", DoubleToString(sl, Digits), " (", DoubleToString(PriceToPoints(slDistance), 2), " pontos abaixo)");
+            Print("   TP = ", DoubleToString(tp, Digits), " (", DoubleToString(PriceToPoints(slDistance * RiskRewardRatio), 2), " pontos acima)");
+         }
       }
       else
       {
          sl = entry + slDistance;
          tp = entry - (slDistance * RiskRewardRatio);
          
-         Print("   ✅ LÓGICA ENTRY-BASED (VENDA):");
-         Print("      SL = Entry + SL_Distance");
-         Print("      SL = ", DoubleToString(entry, Digits), " + ", DoubleToString(slDistance, Digits));
-         Print("      SL = ", DoubleToString(sl, Digits), " (", DoubleToString(slDistance/Point, 2), " pontos acima)");
-         Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-         Print("      TP = Entry - (SL_Distance × R:R)");
-         Print("      TP = ", DoubleToString(entry, Digits), " - (", DoubleToString(slDistance, Digits), " × ", RiskRewardRatio, ")");
-         Print("      TP = ", DoubleToString(tp, Digits), " (", DoubleToString((slDistance * RiskRewardRatio)/Point, 2), " pontos abaixo)");
+         if(shouldLogFull)
+         {
+            Print("════════════════════════════════════════");
+            Print("🔍 AUDITORIA CalculateSLTP #", callCount);
+            Print("   Type: SELL (Venda)");
+            Print("   Entry: ", DoubleToString(entry, Digits));
+            Print("   SL = ", DoubleToString(sl, Digits), " (", DoubleToString(PriceToPoints(slDistance), 2), " pontos acima)");
+            Print("   TP = ", DoubleToString(tp, Digits), " (", DoubleToString(PriceToPoints(slDistance * RiskRewardRatio), 2), " pontos abaixo)");
+         }
       }
    }
    
-   // 5️⃣ Normalizar preços
+   // 5️⃣ Normalizar
    sl = NormalizeDouble(sl, Digits);
    tp = NormalizeDouble(tp, Digits);
    
-   // ✅ VALIDAÇÃO FINAL
-   double finalSLDist = MathAbs(entry - sl);
-   double finalTPDist = MathAbs(tp - entry);
-   double finalSLPoints = finalSLDist / Point;
-   double finalTPPoints = finalTPDist / Point;
-   double finalRR = finalTPDist / finalSLDist;
-   
-   Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-   Print("   📊 RESULTADO FINAL:");
-   Print("      Entry: ", DoubleToString(entry, Digits));
-   Print("      SL:    ", DoubleToString(sl, Digits), " (", DoubleToString(finalSLPoints, 2), " pontos)");
-   Print("      TP:    ", DoubleToString(tp, Digits), " (", DoubleToString(finalTPPoints, 2), " pontos)");
-   Print("      Risk:Reward = 1:", DoubleToString(finalRR, 2));
-   Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-   Print("   💰 LUCRO ESPERADO:");
-   Print("      Capital: $", DoubleToString(InitialBalance, 2));
-   Print("      Risco por Trade: ", RiskPerTrade, "%");
-   Print("      Se atingir SL: -$", DoubleToString(InitialBalance * RiskPerTrade / 100, 2));
-   Print("      Se atingir TP: +$", DoubleToString(InitialBalance * RiskPerTrade / 100 * RiskRewardRatio, 2));
-   Print("════════════════════════════════════════");
+   // 6️⃣ RESUMO FINAL
+   if(shouldLogFull)
+   {
+      double finalSLDist = MathAbs(entry - sl);
+      double finalTPDist = MathAbs(tp - entry);
+      double finalRR = finalTPDist / finalSLDist;
+      
+      Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      Print("   📊 RESULTADO:");
+      Print("      Entry: ", DoubleToString(entry, Digits));
+      Print("      SL:    ", DoubleToString(sl, Digits), " (", DoubleToString(PriceToPoints(finalSLDist), 2), " pontos)");
+      Print("      TP:    ", DoubleToString(tp, Digits), " (", DoubleToString(PriceToPoints(finalTPDist), 2), " pontos)");
+      Print("      R:R = 1:", DoubleToString(finalRR, 2));
+      Print("   💰 Lucro esperado: +$", DoubleToString(InitialBalance * RiskPerTrade / 100 * RiskRewardRatio, 2));
+      Print("════════════════════════════════════════");
+   }
+   else if(shouldLogSimple)
+   {
+      // ✅ CONVERSÃO AUTOMÁTICA
+      double finalSLDist = MathAbs(entry - sl);
+      double finalTPDist = MathAbs(tp - entry);
+      
+      Print("📊 Trade #", callCount, " | ", (isBuy ? "BUY" : "SELL"), 
+            " | Entry:", DoubleToString(entry, Digits),
+            " | SL:", DoubleToString(PriceToPoints(finalSLDist), 2), "pts",
+            " | TP:", DoubleToString(PriceToPoints(finalTPDist), 2), "pts");
+   }
 }
+
 //+------------------------------------------------------------------+
 //| Verificar Filtros de Entrada                                     |
 //+------------------------------------------------------------------+
@@ -1969,7 +2073,6 @@ void RegisterTrade(bool isBuy, int bar, double entry, double sl, double tp)
 //+------------------------------------------------------------------+
 void DrawTradeResult(int tradeIdx)
 {
-   
    // Proteções
    if(tradeIdx < 0 || tradeIdx >= totalTrades) return;
    if(trades[tradeIdx].status == 0) return;
@@ -1980,34 +2083,40 @@ void DrawTradeResult(int tradeIdx)
    double entryPrice = trades[tradeIdx].entryPrice;
    double exitPrice = trades[tradeIdx].exitPrice;
    
-    // ✅ DEBUG COMPLETO
-   Print("════════════════════════════════════════");
-   Print("🎨 DESENHANDO LINHA - Trade #", tradeIdx);
-   Print("   Status: ", isWin ? "WIN" : "LOSS");
-   Print("   Type: ", trades[tradeIdx].isBuy ? "BUY" : "SELL");
-   Print("   ");
-   Print("   📍 PONTO INICIAL (Entry):");
-   Print("      Time: ", TimeToString(openTime, TIME_DATE|TIME_MINUTES));
-   Print("      Price: ", DoubleToString(entryPrice, Digits));
-   int openBar = iBarShift(NULL, 0, openTime);
-   Print("      Bar Index: ", openBar);
-   Print("   ");
-   Print("   📍 PONTO FINAL (Exit):");
-   Print("      Time: ", TimeToString(closeTime, TIME_DATE|TIME_MINUTES));
-   Print("      Price: ", DoubleToString(exitPrice, Digits));
-   int closeBar = iBarShift(NULL, 0, closeTime);
-   Print("      Bar Index: ", closeBar);
-   Print("   ");
-   Print("   📊 VALIDAÇÃO DA VELA DE SAÍDA:");
-   Print("      High[", closeBar, "]: ", DoubleToString(High[closeBar], Digits));
-   Print("      Low[", closeBar, "]: ", DoubleToString(Low[closeBar], Digits));
-   Print("      Open[", closeBar, "]: ", DoubleToString(Open[closeBar], Digits));
-   Print("      Close[", closeBar, "]: ", DoubleToString(Close[closeBar], Digits));
+   // ✅ DEBUG APENAS PARA PRIMEIROS 3 E ÚLTIMOS 3 TRADES
+   static int drawCount = 0;
+   drawCount++;
+   bool shouldDebug = (drawCount <= 3 || drawCount > (totalTrades - 3));
    
-   // Verificar se exitPrice está dentro da vela
-   bool priceInsideBar = (exitPrice >= Low[closeBar] && exitPrice <= High[closeBar]);
-   Print("      Exit Price dentro da vela? ", priceInsideBar ? "✅ SIM" : "❌ NÃO!");
-   Print("════════════════════════════════════════");
+   if(shouldDebug)
+   {
+      Print("════════════════════════════════════════");
+      Print("🎨 DESENHANDO LINHA - Trade #", tradeIdx);
+      Print("   Status: ", isWin ? "WIN" : "LOSS");
+      Print("   Type: ", trades[tradeIdx].isBuy ? "BUY" : "SELL");
+      Print("   ");
+      Print("   📍 PONTO INICIAL (Entry):");
+      Print("      Time: ", TimeToString(openTime, TIME_DATE|TIME_MINUTES));
+      Print("      Price: ", DoubleToString(entryPrice, Digits));
+      int openBar = iBarShift(NULL, 0, openTime);
+      Print("      Bar Index: ", openBar);
+      Print("   ");
+      Print("   📍 PONTO FINAL (Exit):");
+      Print("      Time: ", TimeToString(closeTime, TIME_DATE|TIME_MINUTES));
+      Print("      Price: ", DoubleToString(exitPrice, Digits));
+      int closeBar = iBarShift(NULL, 0, closeTime);
+      Print("      Bar Index: ", closeBar);
+      Print("   ");
+      Print("   📊 VALIDAÇÃO DA VELA DE SAÍDA:");
+      Print("      High[", closeBar, "]: ", DoubleToString(High[closeBar], Digits));
+      Print("      Low[", closeBar, "]: ", DoubleToString(Low[closeBar], Digits));
+      Print("      Open[", closeBar, "]: ", DoubleToString(Open[closeBar], Digits));
+      Print("      Close[", closeBar, "]: ", DoubleToString(Close[closeBar], Digits));
+      
+      bool priceInsideBar = (exitPrice >= Low[closeBar] && exitPrice <= High[closeBar]);
+      Print("      Exit Price dentro da vela? ", priceInsideBar ? "✅ SIM" : "❌ NÃO!");
+      Print("════════════════════════════════════════");
+   }
    
    if(openTime == 0 || closeTime == 0 || exitPrice == 0) return;
    
@@ -2022,9 +2131,7 @@ void DrawTradeResult(int tradeIdx)
    
    string baseName = prefix + "RESULT_" + IntegerToString(tradeIdx) + "_" + TimeToString(openTime, TIME_SECONDS);
    
-   // ═══════════════════════════════════════════════════════════════
-   // 1️⃣ LINHA PONTILHADA (Entry → Exit) - CONECTA NO PREÇO DA VELA
-   // ═══════════════════════════════════════════════════════════════
+   // 1️⃣ LINHA PONTILHADA
    string lineName = baseName + "_LINE";
    
    if(ObjectFind(0, lineName) < 0)
@@ -2041,16 +2148,14 @@ void DrawTradeResult(int tradeIdx)
       }
    }
    
-   // ═══════════════════════════════════════════════════════════════
-   // 2️⃣ CÍRCULO PEQUENO NO PONTO DE SAÍDA (ao invés de seta)
-   // ═══════════════════════════════════════════════════════════════
+   // 2️⃣ CÍRCULO NO PONTO DE SAÍDA
    string circleName = baseName + "_CIRCLE";
    
    if(ObjectFind(0, circleName) < 0)
    {
       if(ObjectCreate(0, circleName, OBJ_ARROW, 0, closeTime, exitPrice))
       {
-         ObjectSetInteger(0, circleName, OBJPROP_ARROWCODE, 159); // Círculo pequeno ●
+         ObjectSetInteger(0, circleName, OBJPROP_ARROWCODE, 159);
          ObjectSetInteger(0, circleName, OBJPROP_COLOR, isWin ? clrDodgerBlue : clrRed);
          ObjectSetInteger(0, circleName, OBJPROP_WIDTH, 2);
          ObjectSetInteger(0, circleName, OBJPROP_BACK, false);
@@ -2058,19 +2163,16 @@ void DrawTradeResult(int tradeIdx)
       }
    }
    
-   // ═══════════════════════════════════════════════════════════════
-   // 3️⃣ TEXTO COM RESULTADO (posicionado próximo ao ponto de saída)
-   // ═══════════════════════════════════════════════════════════════
+   // 3️⃣ TEXTO COM RESULTADO
    string textName = baseName + "_TEXT";
    
    if(ObjectFind(0, textName) < 0)
    {
-      // Calcular posição do texto
       double textPrice;
       if(trades[tradeIdx].isBuy)
-         textPrice = exitPrice + (50 * Point); // Acima do círculo
+         textPrice = exitPrice + (50 * Point);
       else
-         textPrice = exitPrice - (50 * Point); // Abaixo do círculo
+         textPrice = exitPrice - (50 * Point);
       
       string text;
       if(isWin)
@@ -2090,9 +2192,12 @@ void DrawTradeResult(int tradeIdx)
       }
    }
    
-   Print("🎨 ", isWin ? "WIN" : "LOSS", " | Trade #", tradeIdx, 
-         " | Entry: ", DoubleToString(entryPrice, Digits), 
-         " → Exit: ", DoubleToString(exitPrice, Digits));
+   if(shouldDebug)
+   {
+      Print("🎨 ", isWin ? "WIN" : "LOSS", " | Trade #", tradeIdx, 
+            " | Entry: ", DoubleToString(entryPrice, Digits), 
+            " → Exit: ", DoubleToString(exitPrice, Digits));
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -2107,7 +2212,6 @@ void DrawAllClosedTradeResults()
    
    for(int i = 0; i < totalTrades; i++)
    {
-      // Apenas trades fechados (status 1=Win ou 2=Loss)
       if(trades[i].status != 0)
       {
          DrawTradeResult(i);
@@ -2118,7 +2222,6 @@ void DrawAllClosedTradeResults()
    if(drawn > 0)
       Print("🎨 Desenhados resultados de ", drawn, " trades fechados");
 }
-
 // Bloco 9
 
 //+------------------------------------------------------------------+
