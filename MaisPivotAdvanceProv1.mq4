@@ -589,11 +589,76 @@ void CloseCurrentTrade(int currentBar, string reason)
    // ✅ CORREÇÃO: Verificar se atingiu TP/SL e limitar preço
    // ═══════════════════════════════════════════════════════════════
    
-   double closePrice = Close[currentBar];
-   datetime closeTime = Time[currentBar];
-   
-   bool hitTP = false;
-   bool hitSL = false;
+   // ═══════════════════════════════════════════════════════════════
+// ✅ BUSCAR A VELA QUE REALMENTE ATINGIU TP/SL
+// ═══════════════════════════════════════════════════════════════
+
+int closeBar = currentBar;  // Começar pela vela atual
+bool hitTP = false;
+bool hitSL = false;
+double closePrice = Close[currentBar];
+datetime closeTime = Time[currentBar];
+
+// Procurar para trás até encontrar a vela que atingiu TP/SL
+int entryBar = iBarShift(NULL, 0, activeTrade.openTime);
+
+for(int j = currentBar; j <= entryBar; j++)
+{
+   if(activeTrade.isBuy)
+   {
+      // COMPRA: verificar se atingiu TP ou SL
+      if(High[j] >= activeTrade.tpPrice)
+      {
+         hitTP = true;
+         closePrice = activeTrade.tpPrice;
+         closeTime = Time[j];
+         closeBar = j;
+         break;  // Encontrou a primeira vela que atingiu
+      }
+      if(Low[j] <= activeTrade.slPrice)
+      {
+         hitSL = true;
+         closePrice = activeTrade.slPrice;
+         closeTime = Time[j];
+         closeBar = j;
+         break;
+      }
+   }
+   else  // VENDA
+   {
+      if(Low[j] <= activeTrade.tpPrice)
+      {
+         hitTP = true;
+         closePrice = activeTrade.tpPrice;
+         closeTime = Time[j];
+         closeBar = j;
+         break;
+      }
+      if(High[j] >= activeTrade.slPrice)
+      {
+         hitSL = true;
+         closePrice = activeTrade.slPrice;
+         closeTime = Time[j];
+         closeBar = j;
+         break;
+      }
+   }
+}
+
+// Se não atingiu TP/SL, é fechamento parcial (Reverse Close)
+if(!hitTP && !hitSL)
+{
+   closePrice = Close[currentBar];
+   closeTime = Time[currentBar];
+   closeBar = currentBar;
+}
+
+Print("🔍 DEBUG CloseCurrentTrade:");
+Print("   Barra do novo sinal: ", currentBar);
+Print("   Barra que atingiu TP/SL: ", closeBar);
+Print("   Hit TP: ", hitTP, " | Hit SL: ", hitSL);
+Print("   Close Price: ", DoubleToString(closePrice, Digits));
+Print("   Close Time: ", TimeToString(closeTime));
    
    // Verificar se ultrapassou TP ou SL
    if(activeTrade.isBuy)
@@ -1360,8 +1425,39 @@ void CheckTradeResults()
                hitSL = true;
          }
          
+          // ✅ DEBUG ADICIONAL: Mostrar CADA vela testada
+   if(i < 3)  // Apenas para os 3 primeiros trades
+   {
+      Print("   🔎 Testando Bar[", j, "] ", TimeToString(Time[j], TIME_DATE|TIME_MINUTES), 
+            " | High:", DoubleToString(High[j], Digits), 
+            " Low:", DoubleToString(Low[j], Digits),
+            " | hitTP:", hitTP, " hitSL:", hitSL);
+   }
+         
+         
+         
+         
+         
+         
          if(hitTP || hitSL)
          {
+         
+            // ✅ DEBUG: Mostrar detecção de TP/SL
+      Print("════════════════════════════════════════");
+      Print("🎯 TRADE FECHADO - Trade #", i);
+      Print("   Type: ", trades[i].isBuy ? "BUY" : "SELL");
+      Print("   Entry Bar: ", entryBar, " | Time: ", TimeToString(trades[i].openTime, TIME_DATE|TIME_MINUTES));
+      Print("   Entry Price: ", DoubleToString(trades[i].entryPrice, Digits));
+      Print("   Close Bar: ", j, " | Time: ", TimeToString(Time[j], TIME_DATE|TIME_MINUTES));
+      Print("   Close Type: ", hitTP ? "TP" : "SL");
+      Print("   Target Price: ", hitTP ? DoubleToString(trades[i].tpPrice, Digits) : DoubleToString(trades[i].slPrice, Digits));
+      Print("   Bar High: ", DoubleToString(High[j], Digits));
+      Print("   Bar Low: ", DoubleToString(Low[j], Digits));
+      Print("   Bar Close: ", DoubleToString(Close[j], Digits));
+      Print("════════════════════════════════════════");
+         
+         
+         
             trades[i].closeTime = Time[j];
             
             // ✅ ARMAZENAR PREÇO DE SAÍDA REAL
@@ -1632,6 +1728,22 @@ void CalculateSLTP(bool isBuy, int bar, double pivotPrice, double &sl, double &t
    // 5️⃣ Normalizar preços
    sl = NormalizeDouble(sl, Digits);
    tp = NormalizeDouble(tp, Digits);
+   
+   // ✅ DEBUG: Mostrar cálculo TP/SL
+   Print("════════════════════════════════════════");
+   Print("🔍 DEBUG CalculateSLTP");
+   Print("   Bar: ", bar, " | Time: ", TimeToString(Time[bar], TIME_DATE|TIME_MINUTES));
+   Print("   Type: ", isBuy ? "BUY" : "SELL");
+   Print("   Entry: ", DoubleToString(Close[bar], Digits));
+   Print("   Pivot: ", DoubleToString(pivotPrice, Digits));
+   Print("   SL: ", DoubleToString(sl, Digits), " | Distance: ", DoubleToString(MathAbs(Close[bar] - sl) / Point, 0), " points");
+   Print("   TP: ", DoubleToString(tp, Digits), " | Distance: ", DoubleToString(MathAbs(tp - Close[bar]) / Point, 0), " points");
+   Print("   Risk:Reward = 1:", DoubleToString(MathAbs(tp - Close[bar]) / MathAbs(Close[bar] - sl), 2));
+   Print("════════════════════════════════════════");
+   
+   
+   
+   
 }
 
 //+------------------------------------------------------------------+
@@ -1732,6 +1844,7 @@ void RegisterTrade(bool isBuy, int bar, double entry, double sl, double tp)
 //+------------------------------------------------------------------+
 void DrawTradeResult(int tradeIdx)
 {
+   
    // Proteções
    if(tradeIdx < 0 || tradeIdx >= totalTrades) return;
    if(trades[tradeIdx].status == 0) return;
@@ -1741,6 +1854,35 @@ void DrawTradeResult(int tradeIdx)
    datetime closeTime = trades[tradeIdx].closeTime;
    double entryPrice = trades[tradeIdx].entryPrice;
    double exitPrice = trades[tradeIdx].exitPrice;
+   
+    // ✅ DEBUG COMPLETO
+   Print("════════════════════════════════════════");
+   Print("🎨 DESENHANDO LINHA - Trade #", tradeIdx);
+   Print("   Status: ", isWin ? "WIN" : "LOSS");
+   Print("   Type: ", trades[tradeIdx].isBuy ? "BUY" : "SELL");
+   Print("   ");
+   Print("   📍 PONTO INICIAL (Entry):");
+   Print("      Time: ", TimeToString(openTime, TIME_DATE|TIME_MINUTES));
+   Print("      Price: ", DoubleToString(entryPrice, Digits));
+   int openBar = iBarShift(NULL, 0, openTime);
+   Print("      Bar Index: ", openBar);
+   Print("   ");
+   Print("   📍 PONTO FINAL (Exit):");
+   Print("      Time: ", TimeToString(closeTime, TIME_DATE|TIME_MINUTES));
+   Print("      Price: ", DoubleToString(exitPrice, Digits));
+   int closeBar = iBarShift(NULL, 0, closeTime);
+   Print("      Bar Index: ", closeBar);
+   Print("   ");
+   Print("   📊 VALIDAÇÃO DA VELA DE SAÍDA:");
+   Print("      High[", closeBar, "]: ", DoubleToString(High[closeBar], Digits));
+   Print("      Low[", closeBar, "]: ", DoubleToString(Low[closeBar], Digits));
+   Print("      Open[", closeBar, "]: ", DoubleToString(Open[closeBar], Digits));
+   Print("      Close[", closeBar, "]: ", DoubleToString(Close[closeBar], Digits));
+   
+   // Verificar se exitPrice está dentro da vela
+   bool priceInsideBar = (exitPrice >= Low[closeBar] && exitPrice <= High[closeBar]);
+   Print("      Exit Price dentro da vela? ", priceInsideBar ? "✅ SIM" : "❌ NÃO!");
+   Print("════════════════════════════════════════");
    
    if(openTime == 0 || closeTime == 0 || exitPrice == 0) return;
    
