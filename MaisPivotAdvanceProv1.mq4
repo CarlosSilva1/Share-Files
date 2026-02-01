@@ -6,7 +6,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Mais Pivot Advance PRO"
 #property link      ""
-#property version   "3.00"
+#property version   "3.01"
 #property strict
 #property indicator_chart_window
 #property indicator_buffers 6
@@ -15,7 +15,7 @@
 //| INPUTS - CONFIGURAÇÕES                                           |
 //+------------------------------------------------------------------+
 // === Pivôs ===
-input int PivotStrength = 20;                // Força do Pivô (barras)
+input int PivotStrength = 5;                // Força do Pivô (barras)
 input double ATRMultiplier = 1.5;           // Multiplicador ATR
 input int ConfirmCandles = 2;               // Candles de confirmação
 input int MaxConfirmCandles = 3;            // Máximo de barras p/ confirmar
@@ -56,9 +56,10 @@ input double StopLossATRMulti = 1.5;        // SL = ATR × Multiplicador
 input double RiskRewardRatio = 2.0;         // Risk:Reward (TP/SL)
 input int MinStopLossPoints = 200;          // SL Mínimo (pontos)
 input int MaxStopLossPoints = 1000;         // SL Máximo (pontos)
-
-// ✅ ADICIONE ESTA LINHA NOVA:
 input bool UsePivotBasedSL = false;          // 🎯 SL baseado no Pivô (false = baseado na Entry)
+
+// === Gestão de Trades ===
+input bool UseReverseClose = true;          // 🔄 Reverse Close (fecha trade oposto automaticamente)
 
 // === Visual ===
 input bool ShowInfoPanel = true;            // Mostrar Painel
@@ -182,6 +183,21 @@ ENUM_TIMEFRAMES lastPeriod = PERIOD_CURRENT;
 int lastFirstVisibleBar = 0;
 bool chartMoved = false;
 
+// ═══════════════════════════════════════════════════════════════
+// ═══ CONTROLE DE REVERSE CLOSE (NOVO) ═══
+// ═══════════════════════════════════════════════════════════════
+struct ActiveTradeControl
+{
+   bool hasPosition;          // Tem posição aberta?
+   bool isBuy;                // É compra ou venda?
+   datetime openTime;         // Quando abriu
+   double entryPrice;         // Preço de entrada
+   double slPrice;            // Stop Loss
+   double tpPrice;            // Take Profit
+   int tradeIndex;            // Índice no array trades[]
+};
+
+ActiveTradeControl activeTrade;
 
 // Bloco 3
 
@@ -253,8 +269,20 @@ int OnInit()
    currentBalance = InitialBalance;
    maxBalance = InitialBalance;
    
+   // ═══════════════════════════════════════════════════════════════
+   // ═══ INICIALIZAR CONTROLE DE REVERSE CLOSE (NOVO) ═══
+   // ═══════════════════════════════════════════════════════════════
+   activeTrade.hasPosition = false;
+   activeTrade.isBuy = false;
+   activeTrade.openTime = 0;
+   activeTrade.entryPrice = 0;
+   activeTrade.slPrice = 0;
+   activeTrade.tpPrice = 0;
+   activeTrade.tradeIndex = -1;
+   
    Print("MAIS PIVOT PRO iniciado | Barras disponíveis: ", totalBarsAvailable, 
          " | Varredura: ", barsToScan, " barras (", ScanPercentage, "%)");
+   Print("🔄 Reverse Close: ", (UseReverseClose ? "ATIVADO" : "DESATIVADO"));
    
    return(INIT_SUCCEEDED);
 }
@@ -341,6 +369,10 @@ void ResetFinancialMetrics()
    maxBalance = InitialBalance;
    maxDrawdown = 0.0;
    profitFactor = 0.0;
+   
+   // Resetar controle de Reverse Close
+   activeTrade.hasPosition = false;
+   activeTrade.tradeIndex = -1;
    
    Print("🔄 RESET FINANCEIRO EXECUTADO");
 }
@@ -525,7 +557,101 @@ bool IsPivotLow(int shift)
 }
 
 //+------------------------------------------------------------------+
-//| Gerar Sinal de Compra (CORRIGIDO - Array Safe)                  |
+//| Fechar Trade Atual (REVERSE CLOSE) - FUNÇÃO NOVA                 |
+//+------------------------------------------------------------------+
+void CloseCurrentTrade(int currentBar, string reason)
+{
+   if(!activeTrade.hasPosition)
+   {
+      Print("⚠️ CloseCurrentTrade: Nenhum trade ativo para fechar");
+      return;
+   }
+   
+   // Verificar se índice é válido
+   if(activeTrade.tradeIndex < 0 || activeTrade.tradeIndex >= totalTrades)
+   {
+      Print("❌ Erro: Índice de trade inválido");
+      activeTrade.hasPosition = false;
+      return;
+   }
+   
+   // Verificar se trade ainda está aberto
+   if(trades[activeTrade.tradeIndex].status != 0)
+   {
+      Print("⚠️ Trade já foi fechado anteriormente");
+      activeTrade.hasPosition = false;
+      return;
+   }
+   
+   // Preço de fechamento
+   double closePrice = Close[currentBar];
+   datetime closeTime = Time[currentBar];
+   
+   // Calcular lucro/perda
+   double profit = 0;
+   double riskPoints = MathAbs(activeTrade.entryPrice - activeTrade.slPrice) / Point;
+   
+   if(activeTrade.isBuy)
+   {
+      double gainPoints = (closePrice - activeTrade.entryPrice) / Point;
+      profit = (gainPoints / riskPoints) * (InitialBalance * RiskPerTrade / 100);
+   }
+   else
+   {
+      double gainPoints = (activeTrade.entryPrice - closePrice) / Point;
+      profit = (gainPoints / riskPoints) * (InitialBalance * RiskPerTrade / 100);
+   }
+   
+   // Atualizar trade
+   int idx = activeTrade.tradeIndex;
+   trades[idx].closeTime = closeTime;
+   trades[idx].profitUSD = profit;
+   
+   if(profit > 0)
+   {
+      trades[idx].status = 1; // Win
+      totalWins++;
+      totalProfitUSD += profit;
+   }
+   else
+   {
+      trades[idx].status = 2; // Loss
+      totalLosses++;
+      totalLossUSD += MathAbs(profit);
+   }
+   
+   // Atualizar balance
+   currentBalance += profit;
+   
+   if(currentBalance > maxBalance)
+      maxBalance = currentBalance;
+   
+   double dd = ((maxBalance - currentBalance) / maxBalance) * 100;
+   if(dd > maxDrawdown)
+      maxDrawdown = dd;
+   
+   // Deletar linhas do gráfico
+   if(trades[idx].linesDrawn)
+   {
+      ObjectDelete(0, trades[idx].entryLineName);
+      ObjectDelete(0, trades[idx].slLineName);
+      ObjectDelete(0, trades[idx].tpLineName);
+      trades[idx].linesDrawn = false;
+   }
+   
+   string type = activeTrade.isBuy ? "COMPRA" : "VENDA";
+   string result = (profit > 0) ? "WIN" : "LOSS";
+   
+   Print("🔄 REVERSE CLOSE: ", type, " fechada | Razão: ", reason, 
+         " | Resultado: ", result, " $", DoubleToString(profit, 2));
+   
+   // Limpar controle
+   activeTrade.hasPosition = false;
+   activeTrade.tradeIndex = -1;
+}
+
+//+------------------------------------------------------------------+
+//| Gerar Sinal de Compra (COM REVERSE CLOSE)                        |
 //+------------------------------------------------------------------+
 void GenerateBuySignal(int i)
 {
@@ -547,6 +673,35 @@ void GenerateBuySignal(int i)
    if(i >= 0 && i < ArraySize(BuySignalBuf))
       BuySignalBuf[i] = entry;
    
+   // ═══════════════════════════════════════════════════════════
+   // 🔄 REVERSE CLOSE LOGIC
+   // ═══════════════════════════════════════════════════════════
+   
+   if(UseReverseClose && activeTrade.hasPosition)
+   {
+      if(activeTrade.isBuy)
+      {
+         // Já é COMPRA, ignora novo sinal de COMPRA
+         Print("⚠️ Sinal de COMPRA ignorado: já existe COMPRA aberta");
+         lastBuyPivotBar = -1;
+         return;
+      }
+      else
+      {
+         // É VENDA, REVERTER para COMPRA
+         Print("🔄 REVERSE: Detectado sinal de COMPRA, fechando VENDA atual...");
+         CloseCurrentTrade(i, "Reverse to BUY");
+         // Continua para abrir a COMPRA
+      }
+   }
+   else if(!UseReverseClose && activeTrade.hasPosition)
+   {
+      // Modo normal: ignora se já tem posição
+      Print("⚠️ Sinal ignorado: já existe posição aberta (Reverse Close desativado)");
+      lastBuyPivotBar = -1;
+      return;
+   }
+   
    // ═══ SEMPRE REGISTRAR TRADE (durante varredura E ao vivo) ═══
    if(EnableBacktest)
    {
@@ -566,6 +721,15 @@ void GenerateBuySignal(int i)
       trades[tradeIdx].linesDrawn = false;
       
       totalTrades++;
+      
+      // Atualizar controle de trade ativo
+      activeTrade.hasPosition = true;
+      activeTrade.isBuy = true;
+      activeTrade.openTime = tradeTime;
+      activeTrade.entryPrice = entry;
+      activeTrade.slPrice = sl;
+      activeTrade.tpPrice = tp;
+      activeTrade.tradeIndex = tradeIdx;
       
       // ═══ DESENHAR LINHAS HLINE APENAS AO VIVO (não durante varredura) ═══
       if(ShowSLTPLines && !isScanningHistory)
@@ -618,7 +782,7 @@ void GenerateBuySignal(int i)
    // Alerta apenas ao vivo
    if(EnableAlerts && !isScanningHistory && TimeCurrent() - lastAlertTime > 5)
    {
-      string msg = "��� SINAL DE COMPRA em " + Symbol();
+      string msg = "🟢 SINAL DE COMPRA em " + Symbol();
       Alert(msg);
       lastAlertTime = TimeCurrent();
    }
@@ -627,7 +791,7 @@ void GenerateBuySignal(int i)
 }
 
 //+------------------------------------------------------------------+
-//| Gerar Sinal de Venda (CORRIGIDO - Array Safe)                   |
+//| Gerar Sinal de Venda (COM REVERSE CLOSE)                         |
 //+------------------------------------------------------------------+
 void GenerateSellSignal(int i)
 {
@@ -649,6 +813,35 @@ void GenerateSellSignal(int i)
    if(i >= 0 && i < ArraySize(SellSignalBuf))
       SellSignalBuf[i] = entry;
    
+   // ═══════════════════════════════════════════════════════════
+   // 🔄 REVERSE CLOSE LOGIC
+   // ═══════════════════════════════════════════════════════════
+   
+   if(UseReverseClose && activeTrade.hasPosition)
+   {
+      if(!activeTrade.isBuy)
+      {
+         // Já é VENDA, ignora novo sinal de VENDA
+         Print("⚠️ Sinal de VENDA ignorado: já existe VENDA aberta");
+         lastSellPivotBar = -1;
+         return;
+      }
+      else
+      {
+         // É COMPRA, REVERTER para VENDA
+         Print("🔄 REVERSE: Detectado sinal de VENDA, fechando COMPRA atual...");
+         CloseCurrentTrade(i, "Reverse to SELL");
+         // Continua para abrir a VENDA
+      }
+   }
+   else if(!UseReverseClose && activeTrade.hasPosition)
+   {
+      // Modo normal: ignora se já tem posição
+      Print("⚠️ Sinal ignorado: já existe posição aberta (Reverse Close desativado)");
+      lastSellPivotBar = -1;
+      return;
+   }
+   
    // ═══ SEMPRE REGISTRAR TRADE (durante varredura E ao vivo) ═══
    if(EnableBacktest)
    {
@@ -668,6 +861,15 @@ void GenerateSellSignal(int i)
       trades[tradeIdx].linesDrawn = false;
       
       totalTrades++;
+      
+      // Atualizar controle de trade ativo
+      activeTrade.hasPosition = true;
+      activeTrade.isBuy = false;
+      activeTrade.openTime = tradeTime;
+      activeTrade.entryPrice = entry;
+      activeTrade.slPrice = sl;
+      activeTrade.tpPrice = tp;
+      activeTrade.tradeIndex = tradeIdx;
       
       // ═══ DESENHAR LINHAS HLINE APENAS AO VIVO (não durante varredura) ═══
       if(ShowSLTPLines && !isScanningHistory)
@@ -728,11 +930,10 @@ void GenerateSellSignal(int i)
    lastSellPivotBar = -1;
 }
 
-
 // Bloco 4
 
 //+------------------------------------------------------------------+
-//| Custom indicator iteration function (CORRIGIDO FINAL)            |
+//| Custom indicator iteration function (COM REVERSE CLOSE)          |
 //+------------------------------------------------------------------+
 int OnCalculate(const int rates_total,
                 const int prev_calculated,
@@ -813,7 +1014,7 @@ int OnCalculate(const int rates_total,
    if(prev_calculated > 0)
       limit = MathMin(3, barsToScan);
    
-   // ✅✅✅ PROTEÇÃO CRÍTICA: Evitar array out of range ✅✅✅
+   // ✅✅ PROTEÇÃO CRÍTICA: Evitar array out of range ✅✅
    if(limit >= rates_total)
       limit = rates_total - 1;
    
@@ -970,6 +1171,152 @@ int OnCalculate(const int rates_total,
    }
    
    return rates_total;
+}
+
+//+------------------------------------------------------------------+
+//| Verificar Resultados dos Trades (COM REVERSE CLOSE)              |
+//+------------------------------------------------------------------+
+void CheckTradeResults()
+{
+   if(!EnableBacktest)
+      return;
+   
+   // ═══════════════════════════════════════════════════════════
+   // 🔄 MODO REVERSE CLOSE: Verifica apenas o trade ativo
+   // ═══════════════════════════════════════════════════════════
+   
+   if(UseReverseClose && activeTrade.hasPosition)
+   {
+      int idx = activeTrade.tradeIndex;
+      
+      // Verificar se índice válido
+      if(idx < 0 || idx >= totalTrades)
+      {
+         Print("⚠️ CheckTradeResults: Índice de trade inválido");
+         activeTrade.hasPosition = false;
+         return;
+      }
+      
+      // Verificar se trade ainda está aberto
+      if(trades[idx].status != 0)
+      {
+         activeTrade.hasPosition = false;
+         return;
+      }
+      
+      // Verificar SL/TP apenas na barra atual (mais eficiente)
+      bool hitTP = false, hitSL = false;
+      
+      if(activeTrade.isBuy)
+      {
+         if(High[0] >= activeTrade.tpPrice)
+            hitTP = true;
+         if(Low[0] <= activeTrade.slPrice)
+            hitSL = true;
+      }
+      else
+      {
+         if(Low[0] <= activeTrade.tpPrice)
+            hitTP = true;
+         if(High[0] >= activeTrade.slPrice)
+            hitSL = true;
+      }
+      
+      if(hitTP)
+      {
+         CloseCurrentTrade(0, "Take Profit atingido");
+      }
+      else if(hitSL)
+      {
+         CloseCurrentTrade(0, "Stop Loss atingido");
+      }
+      
+      return; // Não precisa verificar outros trades
+   }
+   
+   // ═══════════════════════════════════════════════════════════
+   // MODO NORMAL: Verifica todos os trades abertos
+   // ═══════════════════════════════════════════════════════════
+   
+   if(totalTrades == 0)
+      return;
+   
+   for(int i = 0; i < totalTrades; i++)
+   {
+      if(trades[i].status != 0)
+         continue;
+      
+      int entryBar = iBarShift(NULL, 0, trades[i].openTime);
+      if(entryBar < 0)
+         continue;
+      
+      for(int j = entryBar - 1; j >= 0; j--)
+      {
+         bool hitTP = false, hitSL = false;
+         
+         if(trades[i].isBuy)
+         {
+            if(High[j] >= trades[i].tpPrice)
+               hitTP = true;
+            if(Low[j] <= trades[i].slPrice)
+               hitSL = true;
+         }
+         else
+         {
+            if(Low[j] <= trades[i].tpPrice)
+               hitTP = true;
+            if(High[j] >= trades[i].slPrice)
+               hitSL = true;
+         }
+         
+         if(hitTP || hitSL)
+         {
+            trades[i].closeTime = Time[j];
+            
+            double riskPoints = MathAbs(trades[i].entryPrice - trades[i].slPrice) / Point;
+            double profit = 0;
+            
+            if(hitTP)
+            {
+               trades[i].status = 1; // Win
+               profit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
+               totalWins++;
+               totalProfitUSD += profit;
+            }
+            else
+            {
+               trades[i].status = 2; // Loss
+               profit = -(InitialBalance * RiskPerTrade / 100);
+               totalLosses++;
+               totalLossUSD += MathAbs(profit);
+            }
+            
+            trades[i].profitUSD = profit;
+            currentBalance += profit;
+            
+            if(currentBalance > maxBalance)
+               maxBalance = currentBalance;
+            
+            double dd = ((maxBalance - currentBalance) / maxBalance) * 100;
+            if(dd > maxDrawdown)
+               maxDrawdown = dd;
+            
+            // Remover linhas do gráfico
+            if(trades[i].linesDrawn)
+            {
+               ObjectDelete(0, trades[i].entryLineName);
+               ObjectDelete(0, trades[i].slLineName);
+               ObjectDelete(0, trades[i].tpLineName);
+               trades[i].linesDrawn = false;
+            }
+            
+            string result = hitTP ? "WIN ✅" : "LOSS ❌";
+            Print("📊 Trade fechado: ", result, " | Profit: $", DoubleToString(profit, 2));
+            
+            break;
+         }
+      }
+   }
 }
 
 // Bloco 5
