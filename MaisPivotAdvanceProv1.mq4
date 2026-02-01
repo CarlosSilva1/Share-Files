@@ -630,15 +630,6 @@ void CloseCurrentTrade(int currentBar, string reason)
    if(dd > maxDrawdown)
       maxDrawdown = dd;
    
-   // Deletar linhas do gráfico
-   if(trades[idx].linesDrawn)
-   {
-      ObjectDelete(0, trades[idx].entryLineName);
-      ObjectDelete(0, trades[idx].slLineName);
-      ObjectDelete(0, trades[idx].tpLineName);
-      trades[idx].linesDrawn = false;
-   }
-   
    string type = activeTrade.isBuy ? "COMPRA" : "VENDA";
    string result = (profit > 0) ? "WIN" : "LOSS";
    
@@ -751,8 +742,8 @@ void GenerateBuySignal(int i)
          if(ObjectCreate(0, slName, OBJ_HLINE, 0, 0, sl))
          {
             ObjectSetInteger(0, slName, OBJPROP_COLOR, clrRed);
-            ObjectSetInteger(0, slName, OBJPROP_STYLE, STYLE_DASH);
-            ObjectSetInteger(0, slName, OBJPROP_WIDTH, 2);
+            ObjectSetInteger(0, slName, OBJPROP_STYLE, STYLE_DOT);  // ✅ PONTILHADO
+            ObjectSetInteger(0, slName, OBJPROP_WIDTH, 1);
             ObjectSetInteger(0, slName, OBJPROP_BACK, true);
             ObjectSetInteger(0, slName, OBJPROP_SELECTABLE, false);
          }
@@ -760,8 +751,8 @@ void GenerateBuySignal(int i)
          if(ObjectCreate(0, tpName, OBJ_HLINE, 0, 0, tp))
          {
             ObjectSetInteger(0, tpName, OBJPROP_COLOR, clrDodgerBlue);
-            ObjectSetInteger(0, tpName, OBJPROP_STYLE, STYLE_DASH);
-            ObjectSetInteger(0, tpName, OBJPROP_WIDTH, 2);
+            ObjectSetInteger(0, tpName, OBJPROP_STYLE, STYLE_DOT);  // ✅ PONTILHADO
+            ObjectSetInteger(0, tpName, OBJPROP_WIDTH, 1);
             ObjectSetInteger(0, tpName, OBJPROP_BACK, true);
             ObjectSetInteger(0, tpName, OBJPROP_SELECTABLE, false);
          }
@@ -813,7 +804,7 @@ void GenerateSellSignal(int i)
    if(i >= 0 && i < ArraySize(SellSignalBuf))
       SellSignalBuf[i] = entry;
    
-   // ═══════════════════════════════════════════════════════════
+   // ══════════════���════════════════════════════════════════════
    // 🔄 REVERSE CLOSE LOGIC
    // ═══════════════════════════════════════════════════════════
    
@@ -891,8 +882,8 @@ void GenerateSellSignal(int i)
          if(ObjectCreate(0, slName, OBJ_HLINE, 0, 0, sl))
          {
             ObjectSetInteger(0, slName, OBJPROP_COLOR, clrRed);
-            ObjectSetInteger(0, slName, OBJPROP_STYLE, STYLE_DASH);
-            ObjectSetInteger(0, slName, OBJPROP_WIDTH, 2);
+            ObjectSetInteger(0, slName, OBJPROP_STYLE, STYLE_DOT);  // ✅ PONTILHADO
+            ObjectSetInteger(0, slName, OBJPROP_WIDTH, 1);
             ObjectSetInteger(0, slName, OBJPROP_BACK, true);
             ObjectSetInteger(0, slName, OBJPROP_SELECTABLE, false);
          }
@@ -900,8 +891,8 @@ void GenerateSellSignal(int i)
          if(ObjectCreate(0, tpName, OBJ_HLINE, 0, 0, tp))
          {
             ObjectSetInteger(0, tpName, OBJPROP_COLOR, clrDodgerBlue);
-            ObjectSetInteger(0, tpName, OBJPROP_STYLE, STYLE_DASH);
-            ObjectSetInteger(0, tpName, OBJPROP_WIDTH, 2);
+            ObjectSetInteger(0, tpName, OBJPROP_STYLE, STYLE_DOT);  // ✅ PONTILHADO
+            ObjectSetInteger(0, tpName, OBJPROP_WIDTH, 1);
             ObjectSetInteger(0, tpName, OBJPROP_BACK, true);
             ObjectSetInteger(0, tpName, OBJPROP_SELECTABLE, false);
          }
@@ -1022,7 +1013,7 @@ int OnCalculate(const int rates_total,
    if(limit < 0)
       limit = 0;
    
-   // ═══ RASTREAR PERÍODO DE VARREDURA ═══
+   // ═══ RASTREAMENTO DO PERÍODO DE VARREDURA ═══
    if(rates_total > 0)
    {
       // ✅ PROTEÇÃO: Verificar antes de acessar Time[rates_total - 1]
@@ -1174,7 +1165,7 @@ int OnCalculate(const int rates_total,
 }
 
 //+------------------------------------------------------------------+
-//| Verificar Resultados dos Trades (COM REVERSE CLOSE)              |
+//| Verificar Resultados dos Trades (COM REVERSE CLOSE + DESENHO)    |
 //+------------------------------------------------------------------+
 void CheckTradeResults()
 {
@@ -1222,13 +1213,14 @@ void CheckTradeResults()
             hitSL = true;
       }
       
-      if(hitTP)
+      if(hitTP || hitSL)
       {
-         CloseCurrentTrade(0, "Take Profit atingido");
-      }
-      else if(hitSL)
-      {
-         CloseCurrentTrade(0, "Stop Loss atingido");
+         string reason = hitTP ? "Take Profit atingido" : "Stop Loss atingido";
+         CloseCurrentTrade(0, reason);
+         
+         // ✅ ADICIONAR: Desenhar resultado visual
+         if(ShowSLTPLines)
+            DrawTradeResult(idx);
       }
       
       return; // Não precisa verificar outros trades
@@ -1301,14 +1293,9 @@ void CheckTradeResults()
             if(dd > maxDrawdown)
                maxDrawdown = dd;
             
-            // Remover linhas do gráfico
-            if(trades[i].linesDrawn)
-            {
-               ObjectDelete(0, trades[i].entryLineName);
-               ObjectDelete(0, trades[i].slLineName);
-               ObjectDelete(0, trades[i].tpLineName);
-               trades[i].linesDrawn = false;
-            }
+            // ✅ ADICIONAR: Desenhar resultado visual
+            if(ShowSLTPLines && !isScanningHistory)
+               DrawTradeResult(i);
             
             string result = hitTP ? "WIN ✅" : "LOSS ❌";
             Print("📊 Trade fechado: ", result, " | Profit: $", DoubleToString(profit, 2));
@@ -1781,142 +1768,138 @@ void SendTradeAlert(bool isBuy, double entry, double sl, double tp)
 // Bloco 8
 
 //+------------------------------------------------------------------+
-//| Registrar Novo Trade com Linhas                                 |
+//| Calcular SL e TP (COM REVERSE CLOSE)                             |
 //+------------------------------------------------------------------+
-void RegisterTrade(bool isBuy, int bar, double entry, double sl, double tp)
+void CalculateSLTP(bool isBuy, int bar, double pivotPrice, double &sl, double &tp)
 {
-   Print("════════════════════════════════════════");
-   Print("🔔 RegisterTrade CHAMADO!");
-   Print("   Tipo: ", (isBuy ? "COMPRA 📈" : "VENDA 📉"));
-   Print("   Bar: ", bar, " | Time: ", TimeToString(Time[bar], TIME_DATE|TIME_MINUTES));
-   Print("   Entry: ", DoubleToString(entry, Digits));
-   Print("   SL: ", DoubleToString(sl, Digits), " | Distância: ", DoubleToString(MathAbs(entry - sl) / Point, 1), " pips");
-   Print("   TP: ", DoubleToString(tp, Digits), " | Distância: ", DoubleToString(MathAbs(tp - entry) / Point, 1), " pips");
-   Print("════════════════════════════════════════");
+   // 1️⃣ Calcular ATR
+   double atr = iATR(NULL, 0, ATRPeriod, bar);
+   double slDistance = atr * StopLossATRMulti;
    
-   Print("🔍 Verificando EnableBacktest...");
-   Print("   EnableBacktest = ", (EnableBacktest ? "TRUE ✅" : "FALSE ❌"));
+   // 2️⃣ Aplicar limites mínimos e máximos
+   double slDistancePoints = slDistance / Point;
+   if(slDistancePoints < MinStopLossPoints)
+      slDistance = MinStopLossPoints * Point;
+   if(slDistancePoints > MaxStopLossPoints)
+      slDistance = MaxStopLossPoints * Point;
    
-   if(!EnableBacktest)
+   // 3️⃣ Preço de entrada
+   double entry = Close[bar];
+   
+   // 4️⃣ SWITCH: Escolher lógica baseada no input
+   if(UsePivotBasedSL)
    {
-      Print("════════════════════════════════════════");
-      Print("❌ TRADE BLOQUEADO!");
-      Print("⚠️ MOTIVO: EnableBacktest = FALSE");
-      Print("💡 SOLUÇÃO: Nos inputs do indicador, ative:");
-      Print("   → 'Habilitar Rastreamento' = TRUE");
-      Print("════════════════════════════════════════");
-      return;
-   }
-   
-   Print("✅ Backtest habilitado - Prosseguindo com registro...");
-   
-   Print("📊 Estado ANTES do registro:");
-   Print("   totalTrades atual: ", totalTrades);
-   Print("   Array trades size: ", ArraySize(trades));
-   
-   ArrayResize(trades, totalTrades + 1);
-   Print("✅ Array redimensionado para: ", ArraySize(trades));
-   
-   string timeStr = TimeToString(Time[bar], TIME_DATE|TIME_MINUTES);
-   
-   trades[totalTrades].openTime = Time[bar];
-   trades[totalTrades].entryPrice = entry;
-   trades[totalTrades].slPrice = sl;
-   trades[totalTrades].tpPrice = tp;
-   trades[totalTrades].isBuy = isBuy;
-   trades[totalTrades].status = 0;
-   trades[totalTrades].profitUSD = 0.0;
-   trades[totalTrades].closeTime = 0;
-   trades[totalTrades].barIndex = bar;
-   trades[totalTrades].linesDrawn = false;
-   
-   trades[totalTrades].entryLineName = prefix + "ENTRY_" + timeStr;
-   trades[totalTrades].slLineName = prefix + "SL_" + timeStr;
-   trades[totalTrades].tpLineName = prefix + "TP_" + timeStr;
-   
-   totalTrades++;
-   
-   Print("════════════════════════════════════════");
-   Print("✅✅✅ TRADE REGISTRADO COM SUCESSO! ✅✅✅");
-   Print("   Index registrado: ", totalTrades - 1);
-   Print("   Total de trades: ", totalTrades);
-   Print("   Status: ABERTO (0)");
-   Print("════════════════════════════════════════");
-}
-
-
-//+------------------------------------------------------------------+
-//| Calcular Lucro/Prejuízo em USD                                  |
-//+------------------------------------------------------------------+
-double CalculateProfitUSD(double pips, bool isWin)
-{
-   double riskAmount = InitialBalance * (RiskPerTrade / 100.0);
-   
-   if(isWin)
-   {
-      return riskAmount * RiskRewardRatio;
+      // ════════════════════════════════════════════════════════════
+      // 🎯 OPÇÃO 2: SL baseado no PIVÔ, TP ajustado pela distância REAL
+      // ════════════════════════════════════════════════════════════
+      
+      if(isBuy)
+      {
+         // SL abaixo do pivô (protege o fundo)
+         sl = pivotPrice - slDistance;
+         
+         // ✅ Calcular distância REAL entre Entry e SL
+         double realSLDistance = entry - sl;
+         
+         // TP ajustado pela distância REAL (mantém R:R correto)
+         tp = entry + (realSLDistance * RiskRewardRatio);
+      }
+      else
+      {
+         // SL acima do pivô (protege o topo)
+         sl = pivotPrice + slDistance;
+         
+         // ✅ Calcular distância REAL entre Entry e SL
+         double realSLDistance = sl - entry;
+         
+         // TP ajustado pela distância REAL (mantém R:R correto)
+         tp = entry - (realSLDistance * RiskRewardRatio);
+      }
    }
    else
    {
-      return -riskAmount;
+      // ════════════════════════════════════════════════════════════
+      // 📍 OPÇÃO 1: SL e TP baseados na ENTRADA (R:R fixo)
+      // ════════════════════════════════════════════════════════════
+      
+      if(isBuy)
+      {
+         // SL e TP baseados na entrada
+         sl = entry - slDistance;
+         tp = entry + (slDistance * RiskRewardRatio);
+      }
+      else
+      {
+         sl = entry + slDistance;
+         tp = entry - (slDistance * RiskRewardRatio);
+      }
    }
+   
+   // 5️⃣ Normalizar preços
+   sl = NormalizeDouble(sl, Digits);
+   tp = NormalizeDouble(tp, Digits);
 }
 
 //+------------------------------------------------------------------+
-//| Desenhar Resultado do Trade COM LINHA TRACEJADA AZUL            |
+//| Verificar Filtros de Entrada                                     |
 //+------------------------------------------------------------------+
-void DrawTradeResult(TradeInfo &trade, bool isWin, int closeBar)
+bool PassEntryFilters(bool isBuy, int bar)
 {
-   string suffix = "_" + TimeToString(trade.openTime, TIME_DATE|TIME_MINUTES);
-   
-   // ═══ 1️⃣ LINHA TRACEJADA: ENTRY → TP/SL ATINGIDO ═══
-   string lineName = prefix + "RESULT_LINE" + suffix;
-   double exitPrice = isWin ? trade.tpPrice : trade.slPrice;
-   
-   // Criar linha tracejada do ponto de entrada até o fechamento
-   if(ObjectCreate(0, lineName, OBJ_TREND, 0, trade.openTime, trade.entryPrice, trade.closeTime, exitPrice))
+   // Filtro de Tendência
+   if(UseTrendFilter)
    {
-      // ✅ WIN = AZUL TRACEJADO | LOSS = VERMELHO TRACEJADO
-      ObjectSetInteger(0, lineName, OBJPROP_COLOR, isWin ? clrDodgerBlue : clrRed);
-      ObjectSetInteger(0, lineName, OBJPROP_STYLE, STYLE_DOT); // Linha tracejada (pontos)
-      ObjectSetInteger(0, lineName, OBJPROP_WIDTH, 2);
-      ObjectSetInteger(0, lineName, OBJPROP_BACK, true); // No fundo
-      ObjectSetInteger(0, lineName, OBJPROP_SELECTABLE, false);
-      ObjectSetInteger(0, lineName, OBJPROP_RAY_RIGHT, false); // Não estender
+      double ema = iMA(NULL, TrendTimeframe, TrendEMAPeriod, 0, MODE_EMA, PRICE_CLOSE, 
+                       iBarShift(NULL, TrendTimeframe, Time[bar]));
+      
+      if(isBuy && Close[bar] < ema)
+         return false;
+      if(!isBuy && Close[bar] > ema)
+         return false;
    }
    
-   // ═══ 2️⃣ MARCADOR DE RESULTADO (THUMB UP/DOWN) ═══
-   string resultName = prefix + "RESULT" + suffix;
-   
-   ObjectCreate(0, resultName, OBJ_ARROW, 0, trade.closeTime, exitPrice);
-   ObjectSetInteger(0, resultName, OBJPROP_ARROWCODE, isWin ? 252 : 251); // Thumb up/down
-   ObjectSetInteger(0, resultName, OBJPROP_COLOR, isWin ? clrDodgerBlue : clrRed); // ✅ AZUL para WIN
-   ObjectSetInteger(0, resultName, OBJPROP_WIDTH, 3);
-   ObjectSetInteger(0, resultName, OBJPROP_BACK, false);
-   
-   // ═══ 3️⃣ TEXTO DO RESULTADO COM VALOR EM AZUL/VERMELHO ═══
-   string resultText = prefix + "RESULT_TEXT" + suffix;
-   
-   // Formatar texto completo
-   string text;
-   if(isWin)
+   // Filtro de ATR
+   if(UseATRFilter)
    {
-      // ✅ WIN: texto completo em AZUL
-      text = StringFormat("WIN +$%.2f", MathAbs(trade.profitUSD));
-   }
-   else
-   {
-      // ❌ LOSS: texto completo em VERMELHO
-      text = StringFormat("LOSS -$%.2f", MathAbs(trade.profitUSD));
+      double atr = iATR(NULL, 0, ATRPeriod, bar);
+      
+      if(atr < MinATR)
+         return false;
    }
    
-   double textPrice = isWin ? exitPrice + 30*Point : exitPrice - 40*Point;
-   ObjectCreate(0, resultText, OBJ_TEXT, 0, trade.closeTime, textPrice);
-   ObjectSetString(0, resultText, OBJPROP_TEXT, text);
-   ObjectSetInteger(0, resultText, OBJPROP_COLOR, isWin ? clrDodgerBlue : clrRed); // ✅ AZUL para WIN
-   ObjectSetInteger(0, resultText, OBJPROP_FONTSIZE, 9);
-   ObjectSetString(0, resultText, OBJPROP_FONT, "Arial Bold");
-   ObjectSetInteger(0, resultText, OBJPROP_BACK, false);
+   // Filtro de Horário
+   if(UseTimeFilter)
+   {
+      int hour = TimeHour(Time[bar]);
+      int dayOfWeek = TimeDayOfWeek(Time[bar]);
+      
+      if(hour < StartHour || hour > EndHour)
+         return false;
+      
+      if(AvoidFridayLate && dayOfWeek == 5 && hour > 15)
+         return false;
+   }
+   
+   // Filtro de Spread
+   if(UseSpreadFilter)
+   {
+      double spread = (Ask - Bid) / Point;
+      
+      if(spread > MaxSpreadPoints)
+         return false;
+   }
+   
+   // Filtro de RSI
+   if(UseRSIFilter)
+   {
+      double rsi = iRSI(NULL, 0, RSIPeriod, PRICE_CLOSE, bar);
+      
+      if(isBuy && rsi < RSILevelBuy)
+         return false;
+      if(!isBuy && rsi > RSILevelSell)
+         return false;
+   }
+   
+   return true;
 }
 
 //+------------------------------------------------------------------+
@@ -1939,6 +1922,112 @@ void CalculateMetrics()
       profitFactor = totalProfitUSD > 0 ? 999.99 : 0.0;
 }
 
+//+------------------------------------------------------------------+
+//| Desenhar Resultado do Trade (Linhas + Setas + Texto) - NOVA     |
+//+------------------------------------------------------------------+
+void DrawTradeResult(int tradeIdx)
+{
+   if(tradeIdx < 0 || tradeIdx >= totalTrades)
+      return;
+   
+   if(trades[tradeIdx].status == 0) // Ainda aberto
+      return;
+   
+   bool isWin = (trades[tradeIdx].status == 1);
+   datetime openTime = trades[tradeIdx].openTime;
+   datetime closeTime = trades[tradeIdx].closeTime;
+   double entry = trades[tradeIdx].entryPrice;
+   double exitPrice = isWin ? trades[tradeIdx].tpPrice : trades[tradeIdx].slPrice;
+   
+   // ═══════════════════════════════════════════════════════════
+   // 1️⃣ DELETAR LINHAS HLINE ANTIGAS
+   // ═══════════════════════════════════════════════════════════
+   
+   if(trades[tradeIdx].linesDrawn)
+   {
+      ObjectDelete(0, trades[tradeIdx].entryLineName);
+      ObjectDelete(0, trades[tradeIdx].slLineName);
+      ObjectDelete(0, trades[tradeIdx].tpLineName);
+      trades[tradeIdx].linesDrawn = false;
+   }
+   
+   // ═══════════════════════════════════════════════════════════
+   // 2️⃣ REDESENHAR LINHA DE ENTRADA COMO OBJ_TREND (com cor do resultado)
+   // ═══════════════════════════════════════════════════════════
+   
+   string entryTrendName = prefix + "ENTRY_TREND_" + TimeToString(openTime, TIME_DATE|TIME_SECONDS);
+   
+   if(ObjectCreate(0, entryTrendName, OBJ_TREND, 0, openTime, entry, closeTime, entry))
+   {
+      // Cor baseada no resultado
+      color entryColor = isWin ? clrLime : clrRed;
+      
+      ObjectSetInteger(0, entryTrendName, OBJPROP_COLOR, entryColor);
+      ObjectSetInteger(0, entryTrendName, OBJPROP_STYLE, STYLE_SOLID);
+      ObjectSetInteger(0, entryTrendName, OBJPROP_WIDTH, 2);
+      ObjectSetInteger(0, entryTrendName, OBJPROP_RAY_RIGHT, false);
+      ObjectSetInteger(0, entryTrendName, OBJPROP_BACK, true);
+      ObjectSetInteger(0, entryTrendName, OBJPROP_SELECTABLE, false);
+   }
+   
+   // ═══════════════════════════════════════════════════════════
+   // 3️⃣ DESENHAR SETA DE RESULTADO (✅ WIN ou ❌ LOSS)
+   // ═══════════════════════════════════════════════════════════
+   
+   string resultArrow = prefix + "RESULT_ARROW_" + TimeToString(closeTime, TIME_DATE|TIME_SECONDS);
+   
+   if(ObjectCreate(0, resultArrow, OBJ_ARROW, 0, closeTime, exitPrice))
+   {
+      if(isWin)
+      {
+         ObjectSetInteger(0, resultArrow, OBJPROP_ARROWCODE, 251); // ✅ Check mark
+         ObjectSetInteger(0, resultArrow, OBJPROP_COLOR, clrLime);
+         ObjectSetInteger(0, resultArrow, OBJPROP_ANCHOR, ANCHOR_BOTTOM);
+      }
+      else
+      {
+         ObjectSetInteger(0, resultArrow, OBJPROP_ARROWCODE, 252); // ❌ X mark
+         ObjectSetInteger(0, resultArrow, OBJPROP_COLOR, clrRed);
+         ObjectSetInteger(0, resultArrow, OBJPROP_ANCHOR, ANCHOR_TOP);
+      }
+      
+      ObjectSetInteger(0, resultArrow, OBJPROP_WIDTH, 3);
+      ObjectSetInteger(0, resultArrow, OBJPROP_BACK, false);
+      ObjectSetInteger(0, resultArrow, OBJPROP_SELECTABLE, false);
+   }
+   
+   // ═══════════════════════════════════════════════════════════
+   // 4️⃣ DESENHAR TEXTO DO RESULTADO (WIN +$150.00 ou LOSS -$50.00)
+   // ═══════════════════════════════════════════════════════════
+   
+   string resultText = prefix + "RESULT_TEXT_" + TimeToString(closeTime, TIME_DATE|TIME_SECONDS);
+   
+   string text;
+   if(isWin)
+   {
+      // ✅ WIN: texto completo em AZUL/VERDE
+      text = StringFormat("WIN +$%.2f", trades[tradeIdx].profitUSD);
+   }
+   else
+   {
+      // ❌ LOSS: texto completo em VERMELHO
+      text = StringFormat("LOSS -$%.2f", MathAbs(trades[tradeIdx].profitUSD));
+   }
+   
+   double textPrice = isWin ? exitPrice + 30*Point : exitPrice - 40*Point;
+   
+   if(ObjectCreate(0, resultText, OBJ_TEXT, 0, closeTime, textPrice))
+   {
+      ObjectSetString(0, resultText, OBJPROP_TEXT, text);
+      ObjectSetInteger(0, resultText, OBJPROP_COLOR, isWin ? clrDodgerBlue : clrRed);
+      ObjectSetInteger(0, resultText, OBJPROP_FONTSIZE, 9);
+      ObjectSetString(0, resultText, OBJPROP_FONT, "Arial Bold");
+      ObjectSetInteger(0, resultText, OBJPROP_BACK, false);
+      ObjectSetInteger(0, resultText, OBJPROP_SELECTABLE, false);
+   }
+   
+   Print("🎨 Resultado desenhado: ", text, " | Trade #", tradeIdx);
+}
 
 // Bloco 9
 
