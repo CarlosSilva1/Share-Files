@@ -57,6 +57,9 @@ input double RiskRewardRatio = 2.0;         // Risk:Reward (TP/SL)
 input int MinStopLossPoints = 200;          // SL Mínimo (pontos)
 input int MaxStopLossPoints = 1000;         // SL Máximo (pontos)
 
+// ✅ ADICIONE ESTA LINHA NOVA:
+input bool UsePivotBasedSL = true;          // 🎯 SL baseado no Pivô (false = baseado na Entry)
+
 // === Visual ===
 input bool ShowInfoPanel = true;            // Mostrar Painel
 input bool ShowEntryArrows = true;          // Mostrar Setas Entrada
@@ -1303,36 +1306,106 @@ bool PassEntryFilters(bool isBuy, int bar)
 }
 
 //+------------------------------------------------------------------+
-//| Calcular Stop Loss e Take Profit                                |
+//| Calcular Stop Loss e Take Profit (COM SWITCH)                   |
 //+------------------------------------------------------------------+
 void CalculateSLTP(bool isBuy, int bar, double pivotPrice, double &sl, double &tp)
 {
+   // 1️⃣ Calcular ATR
    double atr = iATR(NULL, 0, ATRPeriod, bar);
    double slDistance = atr * StopLossATRMulti;
    
+   // 2️⃣ Aplicar limites mínimos e máximos
    double slDistancePoints = slDistance / Point;
    if(slDistancePoints < MinStopLossPoints)
       slDistance = MinStopLossPoints * Point;
    if(slDistancePoints > MaxStopLossPoints)
       slDistance = MaxStopLossPoints * Point;
    
+   // 3️⃣ Preço de entrada
    double entry = Close[bar];
    
-   if(isBuy)
+   // 4️⃣ SWITCH: Escolher lógica baseada no input
+   if(UsePivotBasedSL)
    {
-      sl = pivotPrice - slDistance;
-      tp = entry + (slDistance * RiskRewardRatio);
+      // ════════════════════════════════════════════════════════════
+      // 🎯 OPÇÃO 2: SL baseado no PIVÔ, TP ajustado pela distância REAL
+      // ════════════════════════════════════════════════════════════
+      
+      if(isBuy)
+      {
+         // SL abaixo do pivô (protege o fundo)
+         sl = pivotPrice - slDistance;
+         
+         // ✅ Calcular distância REAL entre Entry e SL
+         double realSLDistance = entry - sl;
+         
+         // TP ajustado pela distância REAL (mantém R:R correto)
+         tp = entry + (realSLDistance * RiskRewardRatio);
+      }
+      else
+      {
+         // SL acima do pivô (protege o topo)
+         sl = pivotPrice + slDistance;
+         
+         // ✅ Calcular distância REAL entre Entry e SL
+         double realSLDistance = sl - entry;
+         
+         // TP ajustado pela distância REAL (mantém R:R correto)
+         tp = entry - (realSLDistance * RiskRewardRatio);
+      }
    }
    else
    {
-      sl = pivotPrice + slDistance;
-      tp = entry - (slDistance * RiskRewardRatio);
+      // ════════════════════════════════════════════════════════════
+      // 📍 OPÇÃO 1: SL e TP baseados na ENTRADA (R:R fixo)
+      // ════════════════════════════════════════════════════════════
+      
+      if(isBuy)
+      {
+         // SL e TP baseados na entrada
+         sl = entry - slDistance;
+         tp = entry + (slDistance * RiskRewardRatio);
+      }
+      else
+      {
+         sl = entry + slDistance;
+         tp = entry - (slDistance * RiskRewardRatio);
+      }
    }
    
+   // 5️⃣ Normalizar preços
    sl = NormalizeDouble(sl, Digits);
    tp = NormalizeDouble(tp, Digits);
+   
+   // 6️⃣ LOG DETALHADO para comparação
+   double riskPoints = MathAbs(entry - sl) / Point;
+   double rewardPoints = MathAbs(tp - entry) / Point;
+   double rrRatio = (riskPoints > 0) ? rewardPoints / riskPoints : 0;
+   
+   string method = UsePivotBasedSL ? "PIVÔ BASE" : "ENTRY BASE";
+   
+   Print("════════════════════════════════════════");
+   Print("📊 CÁLCULO SL/TP - ", (isBuy ? "COMPRA 📈" : "VENDA 📉"));
+   Print("   Método: ", method);
+   Print("   ───────────────────────────────");
+   Print("   Pivot:  ", DoubleToString(pivotPrice, Digits));
+   Print("   Entry:  ", DoubleToString(entry, Digits));
+   Print("   SL:     ", DoubleToString(sl, Digits));
+   Print("   TP:     ", DoubleToString(tp, Digits));
+   Print("   ───────────────────────────────");
+   Print("   📏 Distância SL:  ", DoubleToString(riskPoints, 1), " pontos");
+   Print("   📏 Distância TP:  ", DoubleToString(rewardPoints, 1), " pontos");
+   Print("   ───────────────────────────────");
+   Print("   ⚖️ Risk:Reward:   1:", DoubleToString(rrRatio, 2));
+   Print("   ✅ Esperado:      1:", DoubleToString(RiskRewardRatio, 2));
+   
+   if(MathAbs(rrRatio - RiskRewardRatio) < 0.01)
+      Print("   ✅ R:R CORRETO!");
+   else
+      Print("   ⚠️ R:R DIFERENTE DO ESPERADO!");
+   
+   Print("════════════════════════════════════════");
 }
-
 //+------------------------------------------------------------------+
 //| Enviar Alerta de Trade                                           |
 //+------------------------------------------------------------------+
