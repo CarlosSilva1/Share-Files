@@ -729,7 +729,7 @@ void GenerateSellSignal(int i)
 // Bloco 4
 
 //+------------------------------------------------------------------+
-//| Custom indicator iteration function (COM TRIGGER CORRIGIDO)      |
+//| Custom indicator iteration function (CORRIGIDO FINAL)            |
 //+------------------------------------------------------------------+
 int OnCalculate(const int rates_total,
                 const int prev_calculated,
@@ -810,22 +810,44 @@ int OnCalculate(const int rates_total,
    if(prev_calculated > 0)
       limit = MathMin(3, barsToScan);
    
+   // ✅✅✅ PROTEÇÃO CRÍTICA: Evitar array out of range ✅✅✅
+   if(limit >= rates_total)
+      limit = rates_total - 1;
+   
+   // ✅ Garantir que não acesse índices negativos
+   if(limit < 0)
+      limit = 0;
+   
    // ═══ RASTREAR PERÍODO DE VARREDURA ═══
    if(rates_total > 0)
    {
-      if(firstBarProcessed == 0 || Time[rates_total - 1] < firstBarProcessed)
-         firstBarProcessed = Time[rates_total - 1];
+      // ✅ PROTEÇÃO: Verificar antes de acessar Time[rates_total - 1]
+      int lastIndex = rates_total - 1;
+      if(lastIndex >= 0 && lastIndex < ArraySize(Time))
+      {
+         if(firstBarProcessed == 0 || Time[lastIndex] < firstBarProcessed)
+            firstBarProcessed = Time[lastIndex];
+      }
       
-      if(Time[0] > lastBarProcessed)
+      // ✅ PROTEÇÃO: Verificar antes de acessar Time[0]
+      if(ArraySize(Time) > 0 && Time[0] > lastBarProcessed)
          lastBarProcessed = Time[0];
       
       if(firstBarProcessed > 0 && lastBarProcessed > 0)
          totalDaysCovered = (int)((lastBarProcessed - firstBarProcessed) / 86400);
    }
    
-   // ═══ LOOP PRINCIPAL ═══
+   // ═══ LOOP PRINCIPAL COM PROTEÇÃO TOTAL ═══
    for(int i = limit; i >= 0; i--)
    {
+      // ✅✅ PROTEÇÃO ADICIONAL: Verificar se i está dentro dos limites ✅✅
+      if(i < 0 || i >= rates_total)
+         continue;
+      
+      // ✅ PROTEÇÃO: Verificar tamanho dos buffers antes de escrever
+      if(i >= ArraySize(BuyPivotBuf))
+         continue;
+      
       // Resetar buffers
       BuyPivotBuf[i] = EMPTY_VALUE;
       SellPivotBuf[i] = EMPTY_VALUE;
@@ -837,26 +859,42 @@ int OnCalculate(const int rates_total,
       // ═══ DETECTAR PIVÔS ═══
       if(IsPivotHigh(i))
       {
-         SellPivotBuf[i] = High[i];
-         lastSellPivotBar = i;
-         lastSellPivotPrice = High[i];
+         // ✅ PROTEÇÃO: Verificar antes de acessar High[i]
+         if(i >= 0 && i < ArraySize(High))
+         {
+            SellPivotBuf[i] = High[i];
+            lastSellPivotBar = i;
+            lastSellPivotPrice = High[i];
+         }
       }
       
       if(IsPivotLow(i))
       {
-         BuyPivotBuf[i] = Low[i];
-         lastBuyPivotBar = i;
-         lastBuyPivotPrice = Low[i];
+         // ✅ PROTEÇÃO: Verificar antes de acessar Low[i]
+         if(i >= 0 && i < ArraySize(Low))
+         {
+            BuyPivotBuf[i] = Low[i];
+            lastBuyPivotBar = i;
+            lastBuyPivotPrice = Low[i];
+         }
       }
       
       // ═══ VERIFICAR CONFIRMAÇÃO DE COMPRA ═══
-      if(lastBuyPivotBar >= 0 && i < lastBuyPivotBar - ConfirmCandles)
+      if(lastBuyPivotBar >= 0 && i < lastBuyPivotBar - ConfirmCandles && lastBuyPivotBar < rates_total)
       {
          bool confirmed = true;
          
          for(int j = 1; j <= ConfirmCandles; j++)
          {
             int checkBar = lastBuyPivotBar - j;
+            
+            // ✅ PROTEÇÃO: Verificar limites do array antes de acessar
+            if(checkBar < 0 || checkBar >= rates_total || checkBar >= ArraySize(Close))
+            {
+               confirmed = false;
+               break;
+            }
+            
             if(Close[checkBar] <= lastBuyPivotPrice || Low[checkBar] < lastBuyPivotPrice)
             {
                confirmed = false;
@@ -866,7 +904,9 @@ int OnCalculate(const int rates_total,
          
          if(confirmed)
          {
-            BuyConfirmBuf[i] = Low[i] - 15 * Point;
+            // ✅ PROTEÇÃO: Verificar antes de escrever no buffer
+            if(i >= 0 && i < ArraySize(BuyConfirmBuf) && i < ArraySize(Low))
+               BuyConfirmBuf[i] = Low[i] - 15 * Point;
             
             // ✅✅ GERAR SINAL: VARREDURA OU NOVA BARRA AO VIVO ✅✅
             if(isScanningHistory || (i == 0 && isNewBar))
@@ -878,13 +918,21 @@ int OnCalculate(const int rates_total,
       }
       
       // ═══ VERIFICAR CONFIRMAÇÃO DE VENDA ═══
-      if(lastSellPivotBar >= 0 && i < lastSellPivotBar - ConfirmCandles)
+      if(lastSellPivotBar >= 0 && i < lastSellPivotBar - ConfirmCandles && lastSellPivotBar < rates_total)
       {
          bool confirmed = true;
          
          for(int j = 1; j <= ConfirmCandles; j++)
          {
             int checkBar = lastSellPivotBar - j;
+            
+            // ✅ PROTEÇÃO: Verificar limites do array antes de acessar
+            if(checkBar < 0 || checkBar >= rates_total || checkBar >= ArraySize(Close))
+            {
+               confirmed = false;
+               break;
+            }
+            
             if(Close[checkBar] >= lastSellPivotPrice || High[checkBar] > lastSellPivotPrice)
             {
                confirmed = false;
@@ -894,7 +942,9 @@ int OnCalculate(const int rates_total,
          
          if(confirmed)
          {
-            SellConfirmBuf[i] = High[i] + 15 * Point;
+            // ✅ PROTEÇÃO: Verificar antes de escrever no buffer
+            if(i >= 0 && i < ArraySize(SellConfirmBuf) && i < ArraySize(High))
+               SellConfirmBuf[i] = High[i] + 15 * Point;
             
             // ✅✅ GERAR SINAL: VARREDURA OU NOVA BARRA AO VIVO ✅✅
             if(isScanningHistory || (i == 0 && isNewBar))
@@ -918,7 +968,6 @@ int OnCalculate(const int rates_total,
    
    return rates_total;
 }
-
 
 // Bloco 5
 
