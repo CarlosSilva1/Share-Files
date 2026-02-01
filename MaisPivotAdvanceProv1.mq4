@@ -920,6 +920,7 @@ void GenerateSellSignal(int i)
       trades[tradeIdx].status = 0;
       trades[tradeIdx].barIndex = i;
       trades[tradeIdx].linesDrawn = false;
+      trades[tradeIdx].resultDrawn = false;  // ✅ ADICIONAR ESTA LINHA
       
       totalTrades++;
       
@@ -1740,7 +1741,7 @@ void DrawTradeResult(int tradeIdx)
    datetime openTime = trades[tradeIdx].openTime;
    datetime closeTime = trades[tradeIdx].closeTime;
    double entry = trades[tradeIdx].entryPrice;
-   double exitPrice = isWin ? trades[tradeIdx].tpPrice : trades[tradeIdx].slPrice;
+   double exitPrice = trades[tradeIdx].exitPrice;
    
    // ✅ DELETAR LINHAS HLINE ANTIGAS (se existirem)
    if(trades[tradeIdx].linesDrawn)
