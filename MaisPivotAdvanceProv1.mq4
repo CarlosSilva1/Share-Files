@@ -1788,6 +1788,7 @@ void DrawTradeResult(int tradeIdx)
    }
    
    Print("🎨 Resultado desenhado: ", text, " | Trade #", tradeIdx);
+   DrawAllClosedTradeResults();
 }
 
 
