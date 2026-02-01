@@ -1099,7 +1099,7 @@ int OnCalculate(const int rates_total,
       {
          isScanningHistory = false;
          Print("✅ Varredura histórica concluída. Sistema ativo para trading ao vivo.");
-          DrawAllClosedTradeResults();  // ✅ ADICIONAR ESTA LINHA
+         DrawAllClosedTradeResults();
       }
    }
    
@@ -1277,11 +1277,21 @@ int OnCalculate(const int rates_total,
             }
          }
       }
+      
+      // ═══════════════════════════════════════════════════════════
+      // ✅✅ NOVO: VERIFICAR TRADES DURANTE VARREDURA ✅✅
+      // ═══════════════════════════════════════════════════════════
+      if(isScanningHistory && EnableBacktest)
+      {
+         CheckTradeResultsDuringHistory(i);
+      }
    }
    
-   // ═══ PROCESSAR TRADES ABERTOS ═══
-   CheckTradeResults();
-   
+   // ═══ PROCESSAR TRADES ABERTOS (APENAS AO VIVO) ═══
+   if(!isScanningHistory)
+   {
+      CheckTradeResults();
+   }
    
    // ═══════════════════════════════════════════════════════════════
    // ✅ DESENHAR RESULTADOS DE TRADES FECHADOS (UMA VEZ APENAS)
@@ -1294,13 +1304,12 @@ int OnCalculate(const int rates_total,
          if(trades[i].status != 0 && !trades[i].resultDrawn)
          {
             DrawTradeResult(i);
-            trades[i].resultDrawn = true;  // Marcar como desenhado
+            trades[i].resultDrawn = true;
             Print("🎨 Resultado desenhado para trade #", i, " | Status: ", 
                   trades[i].status == 1 ? "WIN" : "LOSS");
          }
       }
    }
-   
    
    // ═══ ATUALIZAR PAINEL ═══
    if(TimeCurrent() - lastPanelUpdate >= 1)
@@ -1313,7 +1322,102 @@ int OnCalculate(const int rates_total,
 }
 
 //+------------------------------------------------------------------+
-//| Verificar Resultados dos Trades (COM REVERSE CLOSE + DESENHO)    |
+//| Verificar Trades Durante Varredura Histórica (CORRIGIDO)         |
+//+------------------------------------------------------------------+
+void CheckTradeResultsDuringHistory(int currentBar)
+{
+   if(!EnableBacktest)
+      return;
+   
+   if(totalTrades == 0)
+      return;
+   
+   // ✅ Verificar TODOS os trades abertos (não só o ativo)
+   for(int i = 0; i < totalTrades; i++)
+   {
+      // Apenas trades abertos
+      if(trades[i].status != 0)
+         continue;
+      
+      // ✅ NÃO VERIFICAR TRADE NA BARRA DE CRIAÇÃO
+      int entryBar = iBarShift(NULL, 0, trades[i].openTime);
+      if(entryBar < 0)
+         continue;
+      
+      // ✅ CRÍTICO: Trade só pode ser fechado DEPOIS da barra de entrada
+      if(currentBar >= entryBar)
+         continue; // Ainda não passou da barra de entrada
+      
+      // Verificar se atingiu TP ou SL nesta barra
+      bool hitTP = false;
+      bool hitSL = false;
+      
+      if(trades[i].isBuy)
+      {
+         if(High[currentBar] >= trades[i].tpPrice)
+            hitTP = true;
+         if(Low[currentBar] <= trades[i].slPrice)
+            hitSL = true;
+      }
+      else
+      {
+         if(Low[currentBar] <= trades[i].tpPrice)
+            hitTP = true;
+         if(High[currentBar] >= trades[i].slPrice)
+            hitSL = true;
+      }
+      
+      if(hitTP || hitSL)
+      {
+         // ✅ Fechar o trade
+         trades[i].closeTime = Time[currentBar];
+         trades[i].exitPrice = hitTP ? trades[i].tpPrice : trades[i].slPrice;
+         
+         double profit = 0;
+         
+         if(hitTP)
+         {
+            trades[i].status = 1; // Win
+            profit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
+            totalWins++;
+            totalProfitUSD += profit;
+         }
+         else
+         {
+            trades[i].status = 2; // Loss
+            profit = -(InitialBalance * RiskPerTrade / 100);
+            totalLosses++;
+            totalLossUSD += MathAbs(profit);
+         }
+         
+         trades[i].profitUSD = profit;
+         currentBalance += profit;
+         
+         if(currentBalance > maxBalance)
+            maxBalance = currentBalance;
+         
+         double dd = ((maxBalance - currentBalance) / maxBalance) * 100;
+         if(dd > maxDrawdown)
+            maxDrawdown = dd;
+         
+         // ✅ Se este é o trade ativo, limpar controle
+         if(UseReverseClose && activeTrade.hasPosition && activeTrade.tradeIndex == i)
+         {
+            activeTrade.hasPosition = false;
+            activeTrade.tradeIndex = -1;
+         }
+         
+         Print("✅ HISTÓRICO: Trade #", i, " | ", (trades[i].isBuy ? "BUY" : "SELL"));
+         Print("   Entry Bar: ", entryBar, " (", TimeToString(trades[i].openTime, TIME_DATE|TIME_MINUTES), ") | Price: ", DoubleToString(trades[i].entryPrice, Digits));
+         Print("   Exit Bar:  ", currentBar, " (", TimeToString(Time[currentBar], TIME_DATE|TIME_MINUTES), ") | Price: ", DoubleToString(trades[i].exitPrice, Digits));
+         Print("   Result: ", (hitTP ? "TP WIN" : "SL LOSS"), " | Profit: $", DoubleToString(profit, 2));
+         Print("   SL: ", DoubleToString(trades[i].slPrice, Digits), " | TP: ", DoubleToString(trades[i].tpPrice, Digits));
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Verificar Resultados dos Trades (MODO AO VIVO)                   |
 //+------------------------------------------------------------------+
 void CheckTradeResults()
 {
@@ -1365,11 +1469,9 @@ void CheckTradeResults()
       {
          string reason = hitTP ? "Take Profit atingido" : "Stop Loss atingido";
          CloseCurrentTrade(0, reason);
-         
-       
       }
       
-      return; // Não precisa verificar outros trades
+      return; // ✅ MANTÉM O RETURN AQUI PARA MODO REVERSE
    }
    
    // ═══════════════════════════════════════════════════════════
@@ -1388,103 +1490,89 @@ void CheckTradeResults()
       if(entryBar < 0)
          continue;
       
+      bool hitTP = false, hitSL = false;
+      datetime closeTime = 0;
+      int closeBar = 0;
+      
+      // Procurar da entrada até agora
       for(int j = entryBar - 1; j >= 0; j--)
       {
-         bool hitTP = false, hitSL = false;
-         
          if(trades[i].isBuy)
          {
             if(High[j] >= trades[i].tpPrice)
+            {
                hitTP = true;
+               closeTime = Time[j];
+               closeBar = j;
+               trades[i].exitPrice = trades[i].tpPrice;
+               break;
+            }
             if(Low[j] <= trades[i].slPrice)
+            {
                hitSL = true;
+               closeTime = Time[j];
+               closeBar = j;
+               trades[i].exitPrice = trades[i].slPrice;
+               break;
+            }
          }
          else
          {
             if(Low[j] <= trades[i].tpPrice)
+            {
                hitTP = true;
-            if(High[j] >= trades[i].slPrice)
-               hitSL = true;
-         }
-         
-          // ✅ DEBUG ADICIONAL: Mostrar CADA vela testada
-   if(i < 3)  // Apenas para os 3 primeiros trades
-   {
-      Print("   🔎 Testando Bar[", j, "] ", TimeToString(Time[j], TIME_DATE|TIME_MINUTES), 
-            " | High:", DoubleToString(High[j], Digits), 
-            " Low:", DoubleToString(Low[j], Digits),
-            " | hitTP:", hitTP, " hitSL:", hitSL);
-   }
-         
-         
-         
-         
-         
-         
-         if(hitTP || hitSL)
-         {
-         
-            // ✅ DEBUG: Mostrar detecção de TP/SL
-      Print("════════════════════════════════════════");
-      Print("🎯 TRADE FECHADO - Trade #", i);
-      Print("   Type: ", trades[i].isBuy ? "BUY" : "SELL");
-      Print("   Entry Bar: ", entryBar, " | Time: ", TimeToString(trades[i].openTime, TIME_DATE|TIME_MINUTES));
-      Print("   Entry Price: ", DoubleToString(trades[i].entryPrice, Digits));
-      Print("   Close Bar: ", j, " | Time: ", TimeToString(Time[j], TIME_DATE|TIME_MINUTES));
-      Print("   Close Type: ", hitTP ? "TP" : "SL");
-      Print("   Target Price: ", hitTP ? DoubleToString(trades[i].tpPrice, Digits) : DoubleToString(trades[i].slPrice, Digits));
-      Print("   Bar High: ", DoubleToString(High[j], Digits));
-      Print("   Bar Low: ", DoubleToString(Low[j], Digits));
-      Print("   Bar Close: ", DoubleToString(Close[j], Digits));
-      Print("════════════════════════════════════════");
-         
-         
-         
-            trades[i].closeTime = Time[j];
-            
-            // ✅ ARMAZENAR PREÇO DE SAÍDA REAL
-            if(hitTP)
+               closeTime = Time[j];
+               closeBar = j;
                trades[i].exitPrice = trades[i].tpPrice;
-            else
+               break;
+            }
+            if(High[j] >= trades[i].slPrice)
+            {
+               hitSL = true;
+               closeTime = Time[j];
+               closeBar = j;
                trades[i].exitPrice = trades[i].slPrice;
-            
-            double riskPoints = MathAbs(trades[i].entryPrice - trades[i].slPrice) / Point;
-            double profit = 0;
-            
-            if(hitTP)
-            {
-               trades[i].status = 1; // Win
-               profit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
-               totalWins++;
-               totalProfitUSD += profit;
+               break;
             }
-            else
-            {
-               trades[i].status = 2; // Loss
-               profit = -(InitialBalance * RiskPerTrade / 100);
-               totalLosses++;
-               totalLossUSD += MathAbs(profit);
-            }
-            
-            trades[i].profitUSD = profit;
-            currentBalance += profit;
-            
-            if(currentBalance > maxBalance)
-               maxBalance = currentBalance;
-            
-            double dd = ((maxBalance - currentBalance) / maxBalance) * 100;
-            if(dd > maxDrawdown)
-               maxDrawdown = dd;
-            
-            // ✅ ADICIONAR: Desenhar resultado visual
-            if(ShowSLTPLines )
-               DrawTradeResult(i);
-            
-            string result = hitTP ? "WIN ✅" : "LOSS ❌";
-            Print("📊 Trade fechado: ", result, " | Profit: $", DoubleToString(profit, 2));
-            
-            break;
          }
+      }
+      
+      if(hitTP || hitSL)
+      {
+         trades[i].closeTime = closeTime;
+         
+         double profit = 0;
+         
+         if(hitTP)
+         {
+            trades[i].status = 1;
+            profit = (InitialBalance * RiskPerTrade / 100) * RiskRewardRatio;
+            totalWins++;
+            totalProfitUSD += profit;
+         }
+         else
+         {
+            trades[i].status = 2;
+            profit = -(InitialBalance * RiskPerTrade / 100);
+            totalLosses++;
+            totalLossUSD += MathAbs(profit);
+         }
+         
+         trades[i].profitUSD = profit;
+         currentBalance += profit;
+         
+         if(currentBalance > maxBalance)
+            maxBalance = currentBalance;
+         
+         double dd = ((maxBalance - currentBalance) / maxBalance) * 100;
+         if(dd > maxDrawdown)
+            maxDrawdown = dd;
+         
+         if(ShowSLTPLines)
+            DrawTradeResult(i);
+         
+         Print("✅ AO VIVO: Trade #", i, " fechado | ", 
+               (hitTP ? "TP WIN" : "SL LOSS"), " $", DoubleToString(profit, 2));
       }
    }
 }
@@ -1640,7 +1728,7 @@ void SendTradeAlert(bool isBuy, double entry, double sl, double tp)
 // Bloco 8
 
 //+------------------------------------------------------------------+
-//| Calcular SL e TP (COM REVERSE CLOSE)                             |
+//| Calcular SL e TP COM AUDITORIA COMPLETA EM PONTOS                |
 //+------------------------------------------------------------------+
 void CalculateSLTP(bool isBuy, int bar, double pivotPrice, double &sl, double &tp)
 {
@@ -1658,52 +1746,103 @@ void CalculateSLTP(bool isBuy, int bar, double pivotPrice, double &sl, double &t
    // 3️⃣ Preço de entrada
    double entry = Close[bar];
    
+   // ✅ LOG DE AUDITORIA - CABEÇALHO
+   Print("════════════════════════════════════════");
+   Print("🔍 AUDITORIA CalculateSLTP");
+   Print("   Type: ", isBuy ? "BUY (Compra)" : "SELL (Venda)");
+   Print("   Bar: ", bar, " | Time: ", TimeToString(Time[bar], TIME_DATE|TIME_MINUTES));
+   Print("   Entry Price: ", DoubleToString(entry, Digits), " (fechamento da vela)");
+   Print("   Pivot Price: ", DoubleToString(pivotPrice, Digits), " (", isBuy ? "fundo" : "topo", ")");
+   Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+   Print("   📏 CÁLCULO DO SL DISTANCE:");
+   Print("      ATR(", ATRPeriod, "): ", DoubleToString(atr, Digits));
+   Print("      Multiplicador: ", StopLossATRMulti);
+   Print("      SL Distance (ATR × Multi): ", DoubleToString(slDistance, Digits));
+   Print("      SL Distance em PONTOS: ", DoubleToString(slDistance/Point, 2), " pontos");
+   Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+   Print("   ⚙️ MODO: ", UsePivotBasedSL ? "PIVOT-BASED SL" : "ENTRY-BASED SL");
+   
    // 4️⃣ SWITCH: Escolher lógica baseada no input
    if(UsePivotBasedSL)
    {
-      // ════════════════════════════════════════════════════════════
-      // 🎯 OPÇÃO 2: SL baseado no PIVÔ, TP ajustado pela distância REAL
-      // ════════════════════════════════════════════════════════════
-      
+      // OPÇÃO 2: SL baseado no PIVÔ
       if(isBuy)
       {
-         // SL abaixo do pivô (protege o fundo)
          sl = pivotPrice - slDistance;
-         
-         // ✅ Calcular distância REAL entre Entry e SL
          double realSLDistance = entry - sl;
-         
-         // TP ajustado pela distância REAL (mantém R:R correto)
          tp = entry + (realSLDistance * RiskRewardRatio);
+         
+         Print("   ✅ LÓGICA PIVOT-BASED (COMPRA):");
+         Print("      1. SL = Pivot - SL_Distance");
+         Print("         SL = ", DoubleToString(pivotPrice, Digits), " - ", DoubleToString(slDistance, Digits));
+         Print("         SL = ", DoubleToString(sl, Digits));
+         Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+         Print("      2. Distância REAL (Entry → SL):");
+         Print("         Real Distance = Entry - SL");
+         Print("         Real Distance = ", DoubleToString(entry, Digits), " - ", DoubleToString(sl, Digits));
+         Print("         Real Distance = ", DoubleToString(realSLDistance, Digits));
+         Print("         Real Distance = ", DoubleToString(realSLDistance/Point, 2), " PONTOS");
+         Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+         Print("      3. TP = Entry + (Real Distance × R:R)");
+         Print("         TP = ", DoubleToString(entry, Digits), " + (", DoubleToString(realSLDistance, Digits), " × ", RiskRewardRatio, ")");
+         Print("         TP = ", DoubleToString(entry, Digits), " + ", DoubleToString(realSLDistance * RiskRewardRatio, Digits));
+         Print("         TP = ", DoubleToString(tp, Digits));
+         Print("         TP Distance = ", DoubleToString((tp - entry)/Point, 2), " PONTOS");
       }
       else
       {
-         // SL acima do pivô (protege o topo)
          sl = pivotPrice + slDistance;
-         
-         // ✅ Calcular distância REAL entre Entry e SL
          double realSLDistance = sl - entry;
-         
-         // TP ajustado pela distância REAL (mantém R:R correto)
          tp = entry - (realSLDistance * RiskRewardRatio);
+         
+         Print("   ✅ LÓGICA PIVOT-BASED (VENDA):");
+         Print("      1. SL = Pivot + SL_Distance");
+         Print("         SL = ", DoubleToString(pivotPrice, Digits), " + ", DoubleToString(slDistance, Digits));
+         Print("         SL = ", DoubleToString(sl, Digits));
+         Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+         Print("      2. Distância REAL (SL → Entry):");
+         Print("         Real Distance = SL - Entry");
+         Print("         Real Distance = ", DoubleToString(sl, Digits), " - ", DoubleToString(entry, Digits));
+         Print("         Real Distance = ", DoubleToString(realSLDistance, Digits));
+         Print("         Real Distance = ", DoubleToString(realSLDistance/Point, 2), " PONTOS");
+         Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+         Print("      3. TP = Entry - (Real Distance × R:R)");
+         Print("         TP = ", DoubleToString(entry, Digits), " - (", DoubleToString(realSLDistance, Digits), " × ", RiskRewardRatio, ")");
+         Print("         TP = ", DoubleToString(entry, Digits), " - ", DoubleToString(realSLDistance * RiskRewardRatio, Digits));
+         Print("         TP = ", DoubleToString(tp, Digits));
+         Print("         TP Distance = ", DoubleToString((entry - tp)/Point, 2), " PONTOS");
       }
    }
    else
    {
-      // ════════════════════════════════════════════════════════════
-      // 📍 OPÇÃO 1: SL e TP baseados na ENTRADA (R:R fixo)
-      // ════════════════════════════════════════════════════════════
-      
+      // OPÇÃO 1: SL e TP baseados na ENTRADA
       if(isBuy)
       {
-         // SL e TP baseados na entrada
          sl = entry - slDistance;
          tp = entry + (slDistance * RiskRewardRatio);
+         
+         Print("   ✅ LÓGICA ENTRY-BASED (COMPRA):");
+         Print("      SL = Entry - SL_Distance");
+         Print("      SL = ", DoubleToString(entry, Digits), " - ", DoubleToString(slDistance, Digits));
+         Print("      SL = ", DoubleToString(sl, Digits), " (", DoubleToString(slDistance/Point, 2), " pontos abaixo)");
+         Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+         Print("      TP = Entry + (SL_Distance × R:R)");
+         Print("      TP = ", DoubleToString(entry, Digits), " + (", DoubleToString(slDistance, Digits), " × ", RiskRewardRatio, ")");
+         Print("      TP = ", DoubleToString(tp, Digits), " (", DoubleToString((slDistance * RiskRewardRatio)/Point, 2), " pontos acima)");
       }
       else
       {
          sl = entry + slDistance;
          tp = entry - (slDistance * RiskRewardRatio);
+         
+         Print("   ✅ LÓGICA ENTRY-BASED (VENDA):");
+         Print("      SL = Entry + SL_Distance");
+         Print("      SL = ", DoubleToString(entry, Digits), " + ", DoubleToString(slDistance, Digits));
+         Print("      SL = ", DoubleToString(sl, Digits), " (", DoubleToString(slDistance/Point, 2), " pontos acima)");
+         Print("      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+         Print("      TP = Entry - (SL_Distance × R:R)");
+         Print("      TP = ", DoubleToString(entry, Digits), " - (", DoubleToString(slDistance, Digits), " × ", RiskRewardRatio, ")");
+         Print("      TP = ", DoubleToString(tp, Digits), " (", DoubleToString((slDistance * RiskRewardRatio)/Point, 2), " pontos abaixo)");
       }
    }
    
@@ -1711,23 +1850,27 @@ void CalculateSLTP(bool isBuy, int bar, double pivotPrice, double &sl, double &t
    sl = NormalizeDouble(sl, Digits);
    tp = NormalizeDouble(tp, Digits);
    
-   // ✅ DEBUG: Mostrar cálculo TP/SL
+   // ✅ VALIDAÇÃO FINAL
+   double finalSLDist = MathAbs(entry - sl);
+   double finalTPDist = MathAbs(tp - entry);
+   double finalSLPoints = finalSLDist / Point;
+   double finalTPPoints = finalTPDist / Point;
+   double finalRR = finalTPDist / finalSLDist;
+   
+   Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+   Print("   📊 RESULTADO FINAL:");
+   Print("      Entry: ", DoubleToString(entry, Digits));
+   Print("      SL:    ", DoubleToString(sl, Digits), " (", DoubleToString(finalSLPoints, 2), " pontos)");
+   Print("      TP:    ", DoubleToString(tp, Digits), " (", DoubleToString(finalTPPoints, 2), " pontos)");
+   Print("      Risk:Reward = 1:", DoubleToString(finalRR, 2));
+   Print("   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+   Print("   💰 LUCRO ESPERADO:");
+   Print("      Capital: $", DoubleToString(InitialBalance, 2));
+   Print("      Risco por Trade: ", RiskPerTrade, "%");
+   Print("      Se atingir SL: -$", DoubleToString(InitialBalance * RiskPerTrade / 100, 2));
+   Print("      Se atingir TP: +$", DoubleToString(InitialBalance * RiskPerTrade / 100 * RiskRewardRatio, 2));
    Print("════════════════════════════════════════");
-   Print("🔍 DEBUG CalculateSLTP");
-   Print("   Bar: ", bar, " | Time: ", TimeToString(Time[bar], TIME_DATE|TIME_MINUTES));
-   Print("   Type: ", isBuy ? "BUY" : "SELL");
-   Print("   Entry: ", DoubleToString(Close[bar], Digits));
-   Print("   Pivot: ", DoubleToString(pivotPrice, Digits));
-   Print("   SL: ", DoubleToString(sl, Digits), " | Distance: ", DoubleToString(MathAbs(Close[bar] - sl) / Point, 0), " points");
-   Print("   TP: ", DoubleToString(tp, Digits), " | Distance: ", DoubleToString(MathAbs(tp - Close[bar]) / Point, 0), " points");
-   Print("   Risk:Reward = 1:", DoubleToString(MathAbs(tp - Close[bar]) / MathAbs(Close[bar] - sl), 2));
-   Print("════════════════════════════════════════");
-   
-   
-   
-   
 }
-
 //+------------------------------------------------------------------+
 //| Verificar Filtros de Entrada                                     |
 //+------------------------------------------------------------------+
