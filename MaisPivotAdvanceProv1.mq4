@@ -129,6 +129,8 @@ int totalDaysCovered = 0;           // ✅ NECESSÁRIA no Bloco 4
 // Controle de atualização
 datetime lastPanelUpdate = 0;       // ✅ NECESSÁRIA no Bloco 4
 
+bool testdebug;
+
 //+------------------------------------------------------------------+
 //| ESTRUTURA PARA RASTREAMENTO DE TRADES                            |
 //+------------------------------------------------------------------+
@@ -201,8 +203,93 @@ ActiveTradeControl activeTrade;
 //+------------------------------------------------------------------+
 int OnInit()
 {
+   
+   
+  
    IndicatorBuffers(6);
    IndicatorDigits(Digits);
+   
+   
+   
+   // ═══════════════════════════════════════════════════════════════
+   // 🧪 TESTE DE CONFIGURAÇÃO DE PONTOS - SEMPRE EXECUTA!
+   // ═══════════════════════════════════════════════════════════════
+   Print("");
+   Print("╔═══════════════════════════════════════════════════════════╗");
+   Print("║  🧪 TESTE DE CONFIGURAÇÃO - CARREGAMENTO DO INDICADOR    ║");
+   Print("╚═══════════════════════════════════════════════════════════╝");
+   Print("");
+   Print("📊 DADOS DO SÍMBOLO:");
+   Print("   Symbol(): ", Symbol());
+   Print("   Digits: ", Digits);
+   Print("   Point: ", DoubleToString(Point, 8));
+   Print("   GetDisplayPoint(): ", DoubleToString(GetDisplayPoint(), 8));
+   Print("");
+   Print("🧮 TESTE DE CONVERSÃO:");
+   Print("   Distância em preço: 55.52");
+   Print("   Usando Point: ", DoubleToString(55.52 / Point, 2), " pontos");
+   Print("   Usando GetDisplayPoint(): ", DoubleToString(55.52 / GetDisplayPoint(), 2), " pontos");
+   Print("");
+   
+   // Validação específica por tipo de ativo
+   string sym = Symbol();
+   StringToUpper(sym);
+   
+   if(StringFind(sym, "XAU") >= 0 || StringFind(sym, "GOLD") >= 0)
+   {
+      // XAUUSD (Ouro)
+      Print("🔍 ANÁLISE PARA XAUUSD (OURO):");
+      Print("   ✅ Esperado: Point = 0.01");
+      Print("   ✅ Esperado: 55.52 / 0.01 = 5552 pontos");
+      Print("");
+      
+      if(MathAbs(Point - 0.01) < 0.0001)
+         Print("   ✅ Point está CORRETO (0.01)");
+      else
+         Print("   ❌ Point está ERRADO! Point = ", DoubleToString(Point, 8), " (deveria ser 0.01)");
+      
+      if(MathAbs(GetDisplayPoint() - 0.01) < 0.0001)
+         Print("   ✅ GetDisplayPoint() está CORRETO (0.01)");
+      else
+         Print("   ❌ GetDisplayPoint() está ERRADO! = ", DoubleToString(GetDisplayPoint(), 8), " (deveria ser 0.01)");
+   }
+   else if(StringFind(sym, "US") >= 0 || StringFind(sym, "SPX") >= 0)
+   {
+      // US500 (Índice)
+      Print("🔍 ANÁLISE PARA US500 (ÍNDICE):");
+      Print("   ✅ Esperado: Point = 1.0");
+      Print("   ✅ Esperado: 55.52 / 1.0 = 55.52 pontos");
+      Print("");
+      
+      if(MathAbs(Point - 1.0) < 0.1)
+         Print("   ✅ Point está CORRETO (1.0)");
+      else
+         Print("   ❌ Point está ERRADO! Point = ", DoubleToString(Point, 8), " (deveria ser 1.0)");
+      
+      if(MathAbs(GetDisplayPoint() - 1.0) < 0.1)
+         Print("   ✅ GetDisplayPoint() está CORRETO (1.0)");
+      else
+         Print("   ❌ GetDisplayPoint() está ERRADO! = ", DoubleToString(GetDisplayPoint(), 8), " (deveria ser 1.0)");
+   }
+   else
+   {
+      Print("🔍 ANÁLISE PARA ", Symbol(), ":");
+      Print("   ⚠️ Símbolo não reconhecido automaticamente");
+      Print("   📌 Point: ", DoubleToString(Point, 8));
+      Print("   📌 GetDisplayPoint(): ", DoubleToString(GetDisplayPoint(), 8));
+   }
+   
+   Print("");
+   Print("╔═══════════════════════════════════════════════════════════╗");
+   Print("║  ✅ TESTE CONCLUÍDO                                      ║");
+   Print("╚═══════════════════════════════════════════════════════════╝");
+   Print("");
+   // ═══════════════════════════════════════════════════════════════
+   // FIM DO TESTE
+   // ═══════════════════════════════════════════════════════════════
+   
+   
+   
    
    // ⭐ Buffer 0: Pivôs de Compra (ESTRELA VERMELHA - Fundo)
    SetIndexBuffer(0, BuyPivotBuf);
@@ -1815,55 +1902,7 @@ double PriceToPoints(double priceDistance)
 void CalculateSLTP(bool isBuy, int bar, double pivotPrice, double &sl, double &tp)
 {
    
-   // ═══════════════════════════════════════════════════════════════
-   // 🧪 TESTE DE CONVERSÃO DE PONTOS (TEMPORÁRIO)
-   // ═══════════════════════════════════════════════════════════════
-   static bool tested = false;
-   if(!tested && EnableDebugLogs)
-   {
-      Print("");
-      Print("╔═══════════════════════════════════════════════════════════╗");
-      Print("║  🧪 TESTE DE CONFIGURAÇÃO DE PONTOS - US500              ║");
-      Print("╚═══════════════════════════════════════════════════════════╝");
-      Print("");
-      Print("📊 DADOS DO SÍMBOLO:");
-      Print("   Symbol(): ", Symbol());
-      Print("   Digits: ", Digits);
-      Print("   Point: ", DoubleToString(Point, 8));
-      Print("   GetDisplayPoint(): ", DoubleToString(GetDisplayPoint(), 8));
-      Print("");
-      Print("🧮 TESTE DE CONVERSÃO:");
-      Print("   Distância em preço: 55.52");
-      Print("   Usando Point: ", DoubleToString(55.52 / Point, 2), " pontos");
-      Print("   Usando GetDisplayPoint(): ", DoubleToString(55.52 / GetDisplayPoint(), 2), " pontos");
-      Print("   ✅ Esperado para US500: 55.52 pontos");
-      Print("");
-      Print("╔═══════════════════════════════════════════════════════════╗");
-      Print("║  🔍 ANÁLISE:                                             ║");
-      if(MathAbs((55.52 / Point) - 55.52) < 0.1)
-         Print("║  ✅ Point está CORRETO (1.0)                            ║");
-      else
-         Print("║  ❌ Point está ERRADO! Deveria ser 1.0                 ║");
-      
-      if(MathAbs((55.52 / GetDisplayPoint()) - 55.52) < 0.1)
-         Print("║  ✅ GetDisplayPoint() está CORRETO (1.0)               ║");
-      else
-         Print("║  ❌ GetDisplayPoint() está ERRADO! Deveria ser 1.0     ║");
-      Print("╚═══════════════════════════════════════════════════════════╝");
-      Print("");
-      
-      tested = true;
-   }
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
+  
    // 1️⃣ Calcular ATR
    double atr = iATR(NULL, 0, ATRPeriod, bar);
    double slDistance = atr * StopLossATRMulti;
