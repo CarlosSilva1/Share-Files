@@ -15,7 +15,7 @@
 //| INPUTS - CONFIGURAÇÕES                                           |
 //+------------------------------------------------------------------+
 // === Pivôs ===
-input int PivotStrength = 5;                // Força do Pivô (barras)
+input int PivotStrength = 20;                // Força do Pivô (barras)
 input double ATRMultiplier = 1.5;           // Multiplicador ATR
 input int ConfirmCandles = 2;               // Candles de confirmação
 input int MaxConfirmCandles = 3;            // Máximo de barras p/ confirmar
@@ -56,7 +56,7 @@ input double StopLossATRMulti = 1.5;        // SL = ATR × Multiplicador
 input double RiskRewardRatio = 2.0;         // Risk:Reward (TP/SL)
 input int MinStopLossPoints = 200;          // SL Mínimo (pontos)
 input int MaxStopLossPoints = 1000;         // SL Máximo (pontos)
-input bool UsePivotBasedSL = false;          // 🎯 SL baseado no Pivô (false = baseado na Entry)
+input bool UsePivotBasedSL = true;          // 🎯 SL baseado no Pivô (false = baseado na Entry)
 
 // === Gestão de Trades ===
 input bool UseReverseClose = true;          // 🔄 Reverse Close (fecha trade oposto automaticamente)
@@ -84,6 +84,8 @@ input int ScanPercentage = 100;             // Varredura Histórico (0-100%)
 input int MaxLookback = 5000;               // Barras Máximas Análise
 input string prefix = "MPP_";               // Prefixo dos Objetos
 
+// ✅ NOVO: Controle de Debug
+bool EnableDebugLogs = true;  // ← ADICIONAR ESTA LINHA SE NÃO EXISTIR
 
 //Bloco 2
 //+------------------------------------------------------------------+
@@ -190,8 +192,7 @@ struct ActiveTradeControl
 
 ActiveTradeControl activeTrade;
 
-// ✅ NOVO: Controle de Debug
-bool EnableDebugLogs = false;  // ← ADICIONAR ESTA LINHA SE NÃO EXISTIR
+
 
 // Bloco 3
 
@@ -1813,6 +1814,56 @@ double PriceToPoints(double priceDistance)
 //+------------------------------------------------------------------+
 void CalculateSLTP(bool isBuy, int bar, double pivotPrice, double &sl, double &tp)
 {
+   
+   // ═══════════════════════════════════════════════════════════════
+   // 🧪 TESTE DE CONVERSÃO DE PONTOS (TEMPORÁRIO)
+   // ═══════════════════════════════════════════════════════════════
+   static bool tested = false;
+   if(!tested && EnableDebugLogs)
+   {
+      Print("");
+      Print("╔═══════════════════════════════════════════════════════════╗");
+      Print("║  🧪 TESTE DE CONFIGURAÇÃO DE PONTOS - US500              ║");
+      Print("╚═══════════════════════════════════════════════════════════╝");
+      Print("");
+      Print("📊 DADOS DO SÍMBOLO:");
+      Print("   Symbol(): ", Symbol());
+      Print("   Digits: ", Digits);
+      Print("   Point: ", DoubleToString(Point, 8));
+      Print("   GetDisplayPoint(): ", DoubleToString(GetDisplayPoint(), 8));
+      Print("");
+      Print("🧮 TESTE DE CONVERSÃO:");
+      Print("   Distância em preço: 55.52");
+      Print("   Usando Point: ", DoubleToString(55.52 / Point, 2), " pontos");
+      Print("   Usando GetDisplayPoint(): ", DoubleToString(55.52 / GetDisplayPoint(), 2), " pontos");
+      Print("   ✅ Esperado para US500: 55.52 pontos");
+      Print("");
+      Print("╔═══════════════════════════════════════════════════════════╗");
+      Print("║  🔍 ANÁLISE:                                             ║");
+      if(MathAbs((55.52 / Point) - 55.52) < 0.1)
+         Print("║  ✅ Point está CORRETO (1.0)                            ║");
+      else
+         Print("║  ❌ Point está ERRADO! Deveria ser 1.0                 ║");
+      
+      if(MathAbs((55.52 / GetDisplayPoint()) - 55.52) < 0.1)
+         Print("║  ✅ GetDisplayPoint() está CORRETO (1.0)               ║");
+      else
+         Print("║  ❌ GetDisplayPoint() está ERRADO! Deveria ser 1.0     ║");
+      Print("╚═══════════════════════════════════════════════════════════╝");
+      Print("");
+      
+      tested = true;
+   }
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
    // 1️⃣ Calcular ATR
    double atr = iATR(NULL, 0, ATRPeriod, bar);
    double slDistance = atr * StopLossATRMulti;
